@@ -120,7 +120,7 @@ sudo ./two_vmx
   - **결과(2026-10-10, 커널 7.0.0-1020-raspi):** HAL을 열 때 `RPI GPIO Interrupt Enable:  PI_BAD_ISR_INIT.`가 3번 나온다. 원인 확인: **`/sys/class/gpio`가 없고 `# CONFIG_GPIO_SYSFS is not set`** 이다. pigpio의 GPIO 인터럽트는 sysfs GPIO를 쓰므로 **이 커널에서는 구조적으로 초기화할 수 없다.** 사용자가 기억하던 "핀 번호에서 뺄 오프셋"은 sysfs가 아직 켜져 있던 커널(6.6 부근)의 이야기로 보이며, 이 커널에서는 오프셋이 아니라 인터럽트 기능 부재가 문제다. **핀 읽기/쓰기에 오프셋이 필요한지는 아직 모른다**(아래 핀 토글 테스트로 확인).
   - 확인: `ls /sys/class/gpio; for c in /sys/class/gpio/gpiochip*; do echo $c $(cat $c/base) $(cat $c/ngpio) $(cat $c/label); done; grep GPIO_SYSFS /boot/config-$(uname -r)`
   - 영향: 인터럽트를 쓰는 기능(`studica_driver::DIO::EnableInterrupt` 등). 우리 `halsim_vmx`의 DIO/Analog/Encoder/IMU는 인터럽트를 쓰지 않는다(폴링).
-  - **해결(Robot-Manager 레포의 `gpio_isr_shim/`):** `LD_PRELOAD`로 `gpioSetISRFunc*`를 GPIO 문자 장치 기반으로 대체했다. 로봇에서 `PI_BAD_ISR_INIT`이 사라졌고, HAL이 GPIO 13/6/12(모두 하강 에지)를 요청하며 GPIO 12에서 50 Hz(약 20 ms 간격)로 에지가 도착하는 것을 확인했다.
+  - **해결(Robot-Manager 레포의 `gpio_isr_shim/`):** `LD_PRELOAD`로 `gpioSetISRFunc*`를 GPIO 문자 장치 기반으로 대체했다. 로봇에서 `PI_BAD_ISR_INIT`이 사라졌고, HAL이 GPIO 13/6/12(모두 하강 에지)를 요청하며 GPIO 12에서 50 Hz(약 20 ms 간격)로 에지가 도착하는 것을 확인했다. shim을 켜고 끝까지 실행하면 정상 종료(코드 0)하고 쓰기 CRC 불일치 0, 실패 0이다.
 - [ ] 오프셋이 있으면 `robot_manager`의 `config.json` 프로필(`kernel_regex`)에 `HALSIMVMX_DIO_MAP` 등으로 적었다
 
 **기대**: 대응표가 안정적이다. **오프셋이 없으면** 프로필 기능은 필요 없는 것이다(그러면 `robot_manager`는 systemd 유닛 하나로 대체할 수 있다).
