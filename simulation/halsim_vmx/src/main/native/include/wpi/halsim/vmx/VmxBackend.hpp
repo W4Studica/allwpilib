@@ -59,7 +59,11 @@ class VmxBackend {
   virtual bool GetImu(ImuSample* sample) = 0;
 };
 
-/// Creates the backend selected at build time.
+/**
+ * Creates the backend named by HALSIMVMX_BACKEND (path of a backend plugin, see
+ * BackendApi.h). If it is unset, the in-memory loopback backend is used. Returns
+ * nullptr if a backend was named but could not be loaded.
+ */
 std::unique_ptr<VmxBackend> CreateBackend();
 
 }  // namespace wpilibvmx

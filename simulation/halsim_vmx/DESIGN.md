@@ -21,6 +21,20 @@
   XRP 방식(`halsim_xrp`)을 본뜨되 UDP 대신 같은 프로세스 안에서 Studica 클래스를 직접 호출한다.
 - **두 경로는 같은 프로세스, 같은 `VMXPi` 하나를 공유해야 한다**(§3). 그래서 `halsim_vmx`가 VMXPi를 소유하고, 사용자가 직접 만드는 Studica 객체에도 그 인스턴스를 넘겨준다.
 
+## 0.5 백엔드 플러그인 (dlopen)
+
+`libhalsim_vmx.so`는 VMX 헤더(`VMXPi.h`, 이 헤더는 VMX 이미지에만 있음)에 의존하지 않는다. 하드웨어 접근은 **백엔드 플러그인**(별도 `.so`)이 하고,
+`HALSIMVMX_BACKEND`에 그 경로를 주면 `dlopen`으로 불러온다. 이렇게 해서 확장 본체는 교차 컴파일(`linuxarm64`)할 수 있고,
+Studica 백엔드(`libhalsim_vmx_studica.so`)는 VMX 위에서 한 번만 빌드한다(`-DWPILIB_WITH_STUDICA=ON`, C++20 필요).
+
+- 인터페이스는 **C 함수표**(`BackendApi.h`, ABI 버전 1)라서 두 라이브러리를 서로 다른 컴파일러/libstdc++로 빌드해도 된다(WPILib trixie 툴체인 대 VMX의 Ubuntu GCC).
+  플러그인은 `wpilibvmx_CreateBackendV1` / `wpilibvmx_DestroyBackendV1`을 내보낸다. 어떤 `VmxBackend`든 `BackendPlugin.hpp`의 `MakeBackendApi`로 감싸서 내보낼 수 있다.
+- `HALSIMVMX_BACKEND`가 **없으면** loopback(메모리 안의 가짜 백엔드)을 쓴다(PC 시뮬레이션용, 하드웨어는 안 움직임, 로그에 표시).
+- `HALSIMVMX_BACKEND`를 **줬는데 로드에 실패하면 확장 초기화를 실패**시킨다(`-1`). loopback으로 조용히 넘어가지 않는다. 로봇 코드가 정상 동작하는 것처럼 보이는데 하드웨어는 안 움직이는 게 가장 위험하기 때문이다.
+- 플러그인이 ABI 버전이나 구조체 크기가 다르면 거부한다. 예외는 경계를 넘지 않는다.
+- 검증: PC에서 테스트용 플러그인(loopback을 C ABI로 감싼 것)으로 로드, 정상 동작, 없는 파일, 플러그인이 아닌 라이브러리, ABI 불일치, 환경변수 동작을 테스트했다.
+  **`StudicaBackend.cpp`는 여전히 컴파일/실행해 보지 못했다.**
+
 ## 1. 매핑표 (경로 B: WPILib 표준 클래스 → sim HAL → Studica 클래스)
 
 "sim HAL" 열은 `hal/.../simulation/*Data.h`의 HALSIM 필드명.

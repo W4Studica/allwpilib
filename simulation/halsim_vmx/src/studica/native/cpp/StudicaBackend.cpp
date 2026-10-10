@@ -2,8 +2,10 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
-// Backend for VMX-pi (WPILIB_WITH_STUDICA=ON). Calls the Studica drivers
-// directly. NOT YET COMPILED OR RUN: vmxpi_hal_cpp is only available on a VMX-pi.
+// Backend plugin for VMX-pi (WPILIB_WITH_STUDICA=ON), built on the device as
+// libhalsim_vmx_studica.so and loaded by halsim_vmx through HALSIMVMX_BACKEND.
+// Calls the Studica drivers directly. NOT YET COMPILED OR RUN: VMXPi.h and
+// vmxpi_hal_cpp are only available on a VMX-pi.
 
 #include <map>
 #include <memory>
@@ -13,10 +15,10 @@
 #include "dio.hpp"
 #include "encoder.hpp"
 #include "imu.hpp"
+#include "wpi/halsim/vmx/BackendPlugin.hpp"
 #include "wpi/halsim/vmx/VmxBackend.hpp"
 
 namespace wpilibvmx {
-namespace {
 
 class StudicaBackend : public VmxBackend {
  public:
@@ -138,10 +140,22 @@ class StudicaBackend : public VmxBackend {
   std::unique_ptr<studica_driver::Imu> m_imu;
 };
 
-}  // namespace
+}  // namespace wpilibvmx
 
-std::unique_ptr<VmxBackend> CreateBackend() {
-  return std::make_unique<StudicaBackend>();
+extern "C" {
+
+WPILIBVMX_PLUGIN_EXPORT wpilibvmx_BackendApi* wpilibvmx_CreateBackendV1(void) {
+  try {
+    return wpilibvmx::MakeBackendApi(
+        std::make_unique<wpilibvmx::StudicaBackend>());
+  } catch (...) {
+    return nullptr;
+  }
 }
 
-}  // namespace wpilibvmx
+WPILIBVMX_PLUGIN_EXPORT void wpilibvmx_DestroyBackendV1(
+    wpilibvmx_BackendApi* api) {
+  wpilibvmx::DestroyBackendApi(api);
+}
+
+}  // extern "C"

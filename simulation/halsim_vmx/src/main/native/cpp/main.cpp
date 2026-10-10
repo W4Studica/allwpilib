@@ -36,7 +36,12 @@ int HALSIM_InitExtension(void) {
         "mapped");
   }
 
-  gSim = std::make_unique<HALSimVMX>(CreateBackend(), std::move(config));
+  auto backend = CreateBackend();
+  if (!backend) {
+    return -1;
+  }
+
+  gSim = std::make_unique<HALSimVMX>(std::move(backend), std::move(config));
   gSim->Start();
 
   std::puts("HALSim VMX Extension Initialized");
