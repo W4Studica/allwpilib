@@ -164,9 +164,14 @@ g++ -std=c++20 -shared -fPIC -O2 \
    ```
    (`libstdc++`도 같은 방식으로: `objdump -T ... | grep -o 'GLIBCXX_[0-9.]*' | sort -Vu | tail -1` 대 `strings /usr/lib/aarch64-linux-gnu/libstdc++.so.6 | grep GLIBCXX | sort -Vu | tail -1`)
 
-- [ ] `not found` 없음
-- [ ] 필요한 최대 GLIBC 버전 ____ ≤ 이 OS의 glibc ____
-- [ ] 필요한 최대 GLIBCXX 버전 ____ ≤ 이 OS의 libstdc++ ____
+- [x] **PC에서 읽어 본 결과(2026-10-10, 로봇에서 실행한 것은 아님):** Maven `org.wpilib.hal:hal-cpp:2027.0.0-alpha-7:linuxarm64`(11.6MB)의 `libwpiHal.so`:
+  - **시뮬레이션 HAL이다**: `HALSIM_*` 심볼 460개, `HAL_LoadExtensions`/`HAL_LoadOneExtension`/`HAL_OnShutdown` 있음. (`allwpilib/hal/build.gradle`: 플랫폼이 `systemcore`일 때만 `src/main/native/systemcore`, 그 외 모든 플랫폼은 `src/main/native/sim`을 컴파일한다.)
+  - 필요한 최대 **`GLIBC_2.34`**, **`GLIBCXX_3.4.31`**. 툴체인 glibc(2.41)보다 훨씬 낮다. 로봇 glibc 2.43은 충분하다. (Ubuntu 22.04는 glibc는 되지만 libstdc++이 GCC 12라 `GLIBCXX_3.4.31`에서 걸린다.)
+  - 의존: `libwpiutil`, `libntcore`, `libdatalog`, `libwpinet`(다른 zip), 시스템의 `libatomic.so.1`, `libstdc++`, `libm`, `libgcc_s`, `libc`.
+  - 다른 라이브러리(`wpiutil`, `ntcore`, `wpimath` 등)와 `libatomic1` 설치 여부는 아직 확인 안 함.
+- [ ] 로봇에서 `ldd`로 `not found` 없음 (위 라이브러리를 로봇으로 옮겨서 확인)
+- [x] 필요한 최대 GLIBC 버전 2.34 ≤ 이 OS의 glibc 2.43
+- [x] 필요한 최대 GLIBCXX 버전 3.4.31 ≤ 이 OS의 libstdc++ (GCC 15, 로봇의 `libstdc++.so.6`에서 `strings ... | grep GLIBCXX`로 재확인 권장)
 
 **실패하면**: 이 OS에서는 공개된 `linuxarm64` 라이브러리를 쓸 수 없다. 선택지는 (a) VMX를 더 새로운 OS(Debian 13/Ubuntu 26.04)로 올린다 — 단 §1을 다시 통과해야 한다, (b) 호환 sysroot로 WPILib을 직접 빌드한다, (c) VMX에서 직접 빌드한다.
 
