@@ -236,6 +236,7 @@ rm ~/robotCommand; sudo systemctl start robot_manager
    **확인됨(2026-10-10):** `gdb`로 `SIGTERM` 3초 뒤 스레드를 보니 메인 스레드는 `hal_hold`의 `main()` 안 `nanosleep`(대기 루프)에 그대로 있고 pigpio 스레드 3개는 사라졌다 = HAL의 `SIGTERM` 핸들러는 VMX/pigpio를 정리하고 **돌아오기만 한다.**
    **`SIGINT`는 0.21초 만에 깨끗하게 종료**한다(`Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit]`; 이때 찍히는 `Signal 2 received by PIGPIOClient::signal_func()`와 스택 출력은 HAL의 정상 출력이다).
    **조치:** `robot_manager`가 `SIGINT` -> `SIGTERM` -> `SIGKILL` 순서로 멈춘다(설정 `stop_signals`). PC에서 신호 순서/폴백/설정 파싱을 테스트했다(39개). **서비스로 돌린 `hal_hold`가 실제로 `stopped by SIGINT after 0.x s`로 끝나는지는 로봇에서 재확인 필요.**
+   **로봇 확인됨(2026-10-10, `d31287e`):** `stopping robot program (pid ...): SIGINT then SIGTERM, then SIGKILL; 5s in total` -> `robot program stopped by SIGINT after 0.2s`. `sending SIGKILL`, systemd의 `Killing process`/`final-sigterm`은 없었다. 위 문제 1(그룹 정리 전 종료)과 2(SIGTERM 무반응) 모두 해결.
    참고: 옛 Studica GradleRIO 포크는 `frcKillRobot.sh -t`(재시작은 `-t -r`)로 멈추고 `/home/lvuser/robotCommand`에 명령을 쓴다. 그 스크립트가 보내는 신호는 소스로 확인하지 못했다(VMX 이미지 안에 있음).
 
 ### 6e. 기존 확인 항목
