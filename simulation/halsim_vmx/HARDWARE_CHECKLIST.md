@@ -202,7 +202,10 @@ FlexDIO/AnalogIn/HiCurrDIO/CommDIO별 채널 인덱스 범위와 채널마다의
 로그에 `HALSim VMX: DIO 0 -> VMX channel N (output)`가 나오면 claim 성공, `cannot claim VMX channel ...`이 나오면 실패(채널이 그 용도를 지원하지 않거나 이미 쓰는 중).
 
 **두 번째 실행(점퍼선 연결 후) — 루프백 성공:** `wrote 0, read 0` / `wrote 1, read 1`이 10줄 모두 일치하고 `loopback OK`. **WPILib 시뮬레이션 HAL의 DIO -> `halsim_vmx` 확장 -> Studica 플러그인 -> VMX 하드웨어 -> 점퍼선 -> 입력 -> HAL의 전체 경로가 실제 로봇에서 동작한다.** (VMX 10 출력, 11 입력, `HALSIMVMX_DIO_MAP="0:10,1:11"`.)
-**알려진 문제 — 프로그램이 끝나지 않는다:** `hal_dio_test`가 `VMX HAL:  pigpio library closed.`까지 출력한 뒤 프로세스가 종료되지 않는다(`timeout`이 60초 뒤 강제 종료, 종료 코드 124). 터미널에서 직접 실행하면 프롬프트가 안 돌아오고 `Ctrl-C`도 소용없다(HAL의 시그널 핸들러가 `Signal 2 received by PIGPIOClient::signal_func()`와 스택을 찍고 `Exiting VMX-pi HAL application ... [normal exit]`라고 하지만 종료되지 않는다). 스택: 메인 스레드는 `exit()` -> `_IO_flush_all`에서 stdio 락 대기, HAL 스레드들은 `fgets`, `accept`, `nanosleep`에서 대기. **stdin 가설은 틀렸다**(`< /dev/null`로도 멈춘다). 원인은 아직 모른다. `vmx_n`(HAL만, 확장 없음)은 정상 종료하므로 sim HAL/확장/`SharedVMX` 정적 소멸 순서와 관련됐을 가능성이 있다(추측). 이 문제는 `robot_manager`의 종료 순서(SIGTERM 후 5초 뒤 SIGKILL)와 직결된다.
+**종료 문제 — 해결됨(2026-10-10):** `hal_dio_test`가 `pigpio library closed.` 뒤에도 끝나지 않았다(`timeout`이 60초 뒤 강제 종료, 종료 코드 124, 터미널에서는 프롬프트가 안 돌아오고 `Ctrl-C`도 소용없음).
+`gdb`(`thread apply all bt`)로 확인한 원인: **pigpio의 스레드 3개(`pthAlertThread`, `pthFifoThread`, `pthSocketThread`)가 종료 후에도 살아 있었고**, FIFO 스레드가 `fgets`에서 stdio 락을 잡은 채 대기해서 메인 스레드의 `exit()` -> `_IO_flush_all`이 영원히 멈췄다. 진짜 `gpioTerminate`가 호출되지 않았기 때문이다.
+**원인은 `gpio_isr_shim`의 버그:** shim이 `dlsym(RTLD_NEXT, "gpioTerminate")`로 원래 함수를 찾는데, Studica 플러그인이 HAL을 `dlopen(RTLD_LOCAL)`로 불러서 HAL이 전역 범위 밖에 있어 `NULL`이었다(HAL을 직접 링크한 `vmx_n`은 문제 없었다). stdin 가설은 틀렸다(`< /dev/null`로도 멈췄다).
+**수정 후 로봇 확인:** `exit code: 0`으로 프롬프트가 바로 돌아오고, 진짜 `gpioTerminate`가 실행된 증거로 pigpio의 종료 통계 배너(`pigpio version=69 internals=300 ... cbTicks ...`)가 출력된다. `loopback OK`도 그대로.
 
 **첫 실행 결과(2026-10-10, 출력=VMX 10, 입력=VMX 11):** 확장 로드(`HAL Extensions: Successfully loaded extension`), 플러그인 사용, 두 채널 claim, 출력 값이 보드에 전달됨(SPI 쓰기 19회 -> 38회, CRC 오류 0)까지 **확인됐다.**
 루프백 읽기는 항상 1이었다(`wrote 0, read 1`). Studica `DIO`는 입력을 **풀업**으로 열기 때문에 연결되지 않은 입력은 항상 1을 읽는다. 배선(또는 보드 표기와 HAL 채널 번호의 차이)을 먼저 의심한다. **루프백 읽기는 아직 확인 안 됨.**
@@ -213,7 +216,18 @@ sudo ~/halsim_vmx-build/dio_probe 10 11
 ```
 `loopback OK`면 배선과 채널 번호는 정상이므로 확장 쪽을 본다. 실패하면 배선/채널 번호 문제다(`input before driving anything: 1`이면 입력이 어디에도 연결 안 된 것).
 
-### 6d. 기존 확인 항목
+### 6d. `robot_manager`의 종료 순서를 실제 HAL 프로세스로 시험 (`hal_hold`)
+
+`hal_hold`는 sim HAL을 초기화하고(확장 로드) 대기만 한다. `robotCommand`로 돌린 뒤 서비스를 멈춰서 `SIGTERM` -> HAL 종료 -> `gpioTerminate`가 정말 빠르게 끝나는지 본다.
+
+```bash
+printf 'env LD_LIBRARY_PATH=/home/ubuntu/wpilib-libs HALSIM_EXTENSIONS=/home/ubuntu/halsim_vmx-build/libhalsim_vmx.so HALSIMVMX_BACKEND=/opt/halsim_vmx/libhalsim_vmx_studica.so /home/ubuntu/halsim_vmx-build/hal_hold\n' > ~/robotCommand
+sleep 8; sudo systemctl stop robot_manager; sudo journalctl -u robot_manager -n 25 --no-pager | grep -E 'robot program|stopping|SIGKILL|started'
+rm ~/robotCommand; sudo systemctl start robot_manager
+```
+기대: `stopping robot program ...` 다음에 `robot program stopped after 0.x s`(`SIGKILL` 없음). `sending SIGKILL`이 나오면 HAL이 `SIGTERM`으로 안 끝난다는 뜻이다(미확인).
+
+### 6e. 기존 확인 항목
 
 최소 Java 로봇 프로젝트(또는 PC에서 `./gradlew deploy`한 결과)로 확인한다. 수동 실행 예(명령 미검증):
 

@@ -11,6 +11,7 @@
 #   libhalsim_vmx.so   the HALSIM extension (HALSIM_EXTENSIONS)
 #   hal_dio_test       drives WPILib DIO through the sim HAL
 #   vmx_channels       prints the VMX channel map
+#   hal_hold           initializes the sim HAL and waits (to try robot_manager's stop sequence)
 #   dio_probe          loopback test of two VMX channels with the Studica DIO class (no HAL, no extension)
 # Libraries (default ~/wpilib-libs): libwpiHal.so, libwpiutil.so, libntcore.so, libdatalog.so, libwpinet.so
 #
@@ -97,6 +98,9 @@ run g++ -std=c++20 -shared -fPIC -O2 -Wall -Wextra "${INC[@]}" -I"$EXT_DIR/src/m
 
 info "hal_dio_test"
 run g++ -std=c++20 -O2 -Wall -Wextra "${INC[@]}" "$EXT_DIR/tools/hal_dio_test.cpp" "${LINK[@]}" -lpthread -o "$OUT_DIR/hal_dio_test"
+
+info "hal_hold"
+run g++ -std=c++20 -O2 -Wall -Wextra "${INC[@]}" "$EXT_DIR/tools/hal_hold.cpp" "${LINK[@]}" -lpthread -o "$OUT_DIR/hal_hold"
 
 info "vmx_channels and dio_probe (need VMXPi.h)"
 if [ -f /usr/local/include/vmxpi/VMXPi.h ]; then
