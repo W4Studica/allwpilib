@@ -9,7 +9,9 @@
 #include <memory>
 
 #include "VMXPi.h"
+#include "analog_input.hpp"
 #include "dio.hpp"
+#include "encoder.hpp"
 #include "wpi/halsim/vmx/VmxBackend.hpp"
 
 namespace wpilibvmx {
@@ -50,9 +52,61 @@ class StudicaBackend : public VmxBackend {
     return false;
   }
 
+ bool InitAnalog(int vmxChannel) override {
+    if (!m_vmx || !m_vmx->IsOpen() || m_analog.contains(vmxChannel)) {
+      return false;
+    }
+    m_analog.emplace(vmxChannel,
+                     std::make_unique<studica_driver::AnalogInput>(
+                         static_cast<VMXChannelIndex>(vmxChannel), m_vmx));
+    return true;
+  }
+
+  void ReleaseAnalog(int vmxChannel) override { m_analog.erase(vmxChannel); }
+
+  bool GetAnalogVoltage(int vmxChannel, double* volts) override {
+    auto it = m_analog.find(vmxChannel);
+    if (it == m_analog.end()) {
+      return false;
+    }
+    float v = 0.0f;
+    if (!it->second->GetAverageVoltage(v)) {
+      return false;
+    }
+    *volts = v;
+    return true;
+  }
+
+ bool InitEncoder(int vmxChannelA, int vmxChannelB) override {
+    if (!m_vmx || !m_vmx->IsOpen() || m_encoders.contains(vmxChannelA)) {
+      return false;
+    }
+    m_encoders.emplace(
+        vmxChannelA,
+        std::make_unique<studica_driver::Encoder>(
+            static_cast<VMXChannelIndex>(vmxChannelA),
+            static_cast<VMXChannelIndex>(vmxChannelB), m_vmx));
+    return true;
+  }
+
+  void ReleaseEncoder(int vmxChannelA) override {
+    m_encoders.erase(vmxChannelA);
+  }
+
+  bool GetEncoderCount(int vmxChannelA, int32_t* count) override {
+    auto it = m_encoders.find(vmxChannelA);
+    if (it == m_encoders.end()) {
+      return false;
+    }
+    *count = it->second->GetCount();
+    return true;
+  }
+
  private:
   std::shared_ptr<VMXPi> m_vmx;
   std::map<int, std::unique_ptr<studica_driver::DIO>> m_dio;
+  std::map<int, std::unique_ptr<studica_driver::AnalogInput>> m_analog;
+  std::map<int, std::unique_ptr<studica_driver::Encoder>> m_encoders;
 };
 
 }  // namespace

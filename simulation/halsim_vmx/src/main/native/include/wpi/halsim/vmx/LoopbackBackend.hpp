@@ -23,16 +23,37 @@ class LoopbackBackend : public VmxBackend {
   void ReleaseDigital(int vmxChannel) override;
   void SetDigital(int vmxChannel, bool value) override;
   bool GetDigital(int vmxChannel) override;
+  bool InitAnalog(int vmxChannel) override;
+  void ReleaseAnalog(int vmxChannel) override;
+  bool GetAnalogVoltage(int vmxChannel, double* volts) override;
+  bool InitEncoder(int vmxChannelA, int vmxChannelB) override;
+  void ReleaseEncoder(int vmxChannelA) override;
+  bool GetEncoderCount(int vmxChannelA, int32_t* count) override;
 
   /// Test hooks.
   bool IsClaimed(int vmxChannel);
   bool IsInput(int vmxChannel);
   /// Drives a pin as if an external signal changed it (input pins).
   void Drive(int vmxChannel, bool value);
+  bool IsAnalogClaimed(int vmxChannel);
+  void DriveAnalog(int vmxChannel, double volts);
+  bool IsEncoderClaimed(int vmxChannelA);
+  void DriveEncoder(int vmxChannelA, int32_t count);
 
  private:
   std::mutex m_mutex;
   std::map<int, Pin> m_pins;
+  std::map<int, double> m_analog;
+
+  struct Enc {
+    int channelB = 0;
+    int32_t count = 0;
+  };
+  std::map<int, Enc> m_encoders;
+
+  // Mirrors the assumption that a VMX channel can serve only one function.
+  // Caller holds m_mutex.
+  bool DigitalChannelBusy(int vmxChannel) const;
 };
 
 }  // namespace wpilibvmx

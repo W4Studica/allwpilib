@@ -57,3 +57,8 @@ std::optional<int> ChannelMap::Get(int wpilibChannel) const {
   }
   return it->second;
 }
+
+ChannelMaps ChannelMaps::FromEnv() {
+  return {ChannelMap::FromEnv("HALSIMVMX_DIO_MAP"),
+          ChannelMap::FromEnv("HALSIMVMX_ANALOG_MAP")};
+}

@@ -8,7 +8,9 @@
 #include <utility>
 
 #include "wpi/hal/Ports.h"
+#include "wpi/hal/simulation/AnalogInData.h"
 #include "wpi/hal/simulation/DIOData.h"
+#include "wpi/hal/simulation/EncoderData.h"
 
 using namespace wpilibvmx;
 
@@ -16,8 +18,8 @@ namespace {
 constexpr auto kPollPeriod = std::chrono::milliseconds(10);
 }  // namespace
 
-HALSimVMX::HALSimVMX(std::unique_ptr<VmxBackend> backend, ChannelMap dioMap)
-    : m_backend{std::move(backend)}, m_dioMap{std::move(dioMap)} {
+HALSimVMX::HALSimVMX(std::unique_ptr<VmxBackend> backend, ChannelMaps maps)
+    : m_backend{std::move(backend)}, m_maps{std::move(maps)} {
   // Pins are fixed for the lifetime of the object: callbacks keep pointers
   // into this vector, so it must never reallocate after Start().
   int numChannels = HAL_GetNumDigitalChannels();
@@ -25,8 +27,23 @@ HALSimVMX::HALSimVMX(std::unique_ptr<VmxBackend> backend, ChannelMap dioMap)
   for (int ch = 0; ch < numChannels; ++ch) {
     m_dio[ch].owner = this;
     m_dio[ch].channel = ch;
-    if (auto vmx = m_dioMap.Get(ch)) {
+    if (auto vmx = m_maps.dio.Get(ch)) {
       m_dio[ch].vmxChannel = *vmx;
+    }
+  }
+
+  int numEncoders = HAL_GetNumEncoders();
+  m_encoders.resize(numEncoders);
+  for (int i = 0; i < numEncoders; ++i) {
+    m_encoders[i].index = i;
+  }
+
+  int numAnalog = HAL_GetNumAnalogInputs();
+  m_analog.resize(numAnalog);
+  for (int ch = 0; ch < numAnalog; ++ch) {
+    m_analog[ch].channel = ch;
+    if (auto vmx = m_maps.analog.Get(ch)) {
+      m_analog[ch].vmxChannel = *vmx;
     }
   }
 }
@@ -77,12 +94,51 @@ void HALSimVMX::Stop() {
       pin.applied = false;
     }
   }
+  for (auto& pin : m_analog) {
+    if (pin.applied) {
+      m_backend->ReleaseAnalog(pin.vmxChannel);
+      pin.applied = false;
+    }
+  }
+  for (auto& pin : m_encoders) {
+    if (pin.applied) {
+      m_backend->ReleaseEncoder(pin.vmxA);
+      pin.applied = false;
+    }
+  }
+}
+
+std::set<int> HALSimVMX::EncoderOwnedDioChannels() const {
+  std::set<int> owned;
+  for (const auto& enc : m_encoders) {
+    if (!HALSIM_GetEncoderInitialized(enc.index)) {
+      continue;
+    }
+    int a = HALSIM_GetEncoderDigitalChannelA(enc.index);
+    int b = HALSIM_GetEncoderDigitalChannelB(enc.index);
+    if (m_maps.dio.Get(a) && m_maps.dio.Get(b)) {
+      owned.insert(a);
+      owned.insert(b);
+    }
+  }
+  return owned;
 }
 
 void HALSimVMX::Poll() {
+  // WPILib's Encoder also creates DigitalInputs on its A/B channels. On VMX a
+  // channel serves one function, so the encoder wins and those DIOs are skipped.
+  const std::set<int> encoderOwned = EncoderOwnedDioChannels();
   for (auto& pin : m_dio) {
     if (pin.vmxChannel >= 0) {
-      PollDio(pin);
+      PollDio(pin, encoderOwned.contains(pin.channel));
+    }
+  }
+  for (auto& pin : m_encoders) {
+    PollEncoder(pin);
+  }
+  for (auto& pin : m_analog) {
+    if (pin.vmxChannel >= 0) {
+      PollAnalog(pin);
     }
   }
 }
@@ -97,10 +153,11 @@ void HALSimVMX::OnDioValue(const char*, void* param, const HAL_Value* value) {
   }
 }
 
-void HALSimVMX::PollDio(DioPin& pin) {
+void HALSimVMX::PollDio(DioPin& pin, bool ownedByEncoder) {
   // Never call HALSIM_* while holding m_mutex: the sim HAL may hold its own
   // lock while running OnDioValue, which takes m_mutex.
-  const bool initialized = HALSIM_GetDIOInitialized(pin.channel);
+  const bool initialized =
+      HALSIM_GetDIOInitialized(pin.channel) && !ownedByEncoder;
   const bool isInput = HALSIM_GetDIOIsInput(pin.channel);
   const bool simValue = HALSIM_GetDIOValue(pin.channel);
 
@@ -130,5 +187,108 @@ void HALSimVMX::PollDio(DioPin& pin) {
 
   if (publish && hardwareValue != simValue) {
     HALSIM_SetDIOValue(pin.channel, hardwareValue);
+  }
+}
+
+void HALSimVMX::PollAnalog(AnalogPin& pin) {
+  // See PollDio: no HALSIM_* calls while holding m_mutex.
+  const bool initialized = HALSIM_GetAnalogInInitialized(pin.channel);
+  const double simVolts = HALSIM_GetAnalogInVoltage(pin.channel);
+
+  bool publish = false;
+  double hardwareVolts = 0.0;
+  {
+    std::scoped_lock lock{m_mutex};
+
+    if (pin.applied && !initialized) {
+      m_backend->ReleaseAnalog(pin.vmxChannel);
+      pin.applied = false;
+    }
+    if (!pin.applied && initialized) {
+      pin.applied = m_backend->InitAnalog(pin.vmxChannel);
+    }
+    if (pin.applied) {
+      publish = m_backend->GetAnalogVoltage(pin.vmxChannel, &hardwareVolts);
+    }
+  }
+
+  if (publish && hardwareVolts != simVolts) {
+    HALSIM_SetAnalogInVoltage(pin.channel, hardwareVolts);
+  }
+}
+
+void HALSimVMX::PollEncoder(EncoderPin& pin) {
+  // See PollDio: no HALSIM_* calls while holding m_mutex.
+  const int i = pin.index;
+  const bool initialized = HALSIM_GetEncoderInitialized(i);
+  const auto vmxA = m_maps.dio.Get(HALSIM_GetEncoderDigitalChannelA(i));
+  const auto vmxB = m_maps.dio.Get(HALSIM_GetEncoderDigitalChannelB(i));
+  const bool mapped = vmxA && vmxB;
+  const bool reverse = HALSIM_GetEncoderReverseDirection(i);
+  const bool resetRequested = HALSIM_GetEncoderReset(i);
+  const double distancePerPulse = HALSIM_GetEncoderDistancePerPulse(i);
+
+  bool publish = false;
+  int32_t count = 0;
+  double rate = 0.0;
+  bool direction = false;
+  bool updateDirection = false;
+  {
+    std::scoped_lock lock{m_mutex};
+
+    if (pin.applied &&
+        (!initialized || !mapped || *vmxA != pin.vmxA || *vmxB != pin.vmxB)) {
+      m_backend->ReleaseEncoder(pin.vmxA);
+      pin.applied = false;
+    }
+    if (!pin.applied && initialized && mapped) {
+      if (m_backend->InitEncoder(*vmxA, *vmxB)) {
+        pin.applied = true;
+        pin.vmxA = *vmxA;
+        pin.vmxB = *vmxB;
+        pin.haveLast = false;
+        int32_t raw = 0;
+        pin.offset = m_backend->GetEncoderCount(pin.vmxA, &raw) ? raw : 0;
+      }
+    }
+    if (pin.applied) {
+      int32_t raw = 0;
+      if (m_backend->GetEncoderCount(pin.vmxA, &raw)) {
+        if (resetRequested) {
+          pin.offset = raw;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        const int32_t delta = pin.haveLast ? raw - pin.lastRaw : 0;
+        if (pin.haveLast) {
+          const double seconds =
+              std::chrono::duration<double>(now - pin.lastTime).count();
+          if (seconds > 0.0) {
+            rate = delta * distancePerPulse / seconds * (reverse ? -1 : 1);
+          }
+        }
+        if (delta != 0) {
+          direction = (delta > 0) != reverse;
+          updateDirection = true;
+        }
+        pin.lastRaw = raw;
+        pin.lastTime = now;
+        pin.haveLast = true;
+        count = (raw - pin.offset) * (reverse ? -1 : 1);
+        publish = true;
+      }
+    }
+  }
+
+  if (publish) {
+    if (count != HALSIM_GetEncoderCount(i)) {
+      HALSIM_SetEncoderCount(i, count);
+    }
+    HALSIM_SetEncoderRate(i, rate);
+    if (updateDirection) {
+      HALSIM_SetEncoderDirection(i, direction);
+    }
+  }
+  if (resetRequested) {
+    HALSIM_SetEncoderReset(i, false);
   }
 }

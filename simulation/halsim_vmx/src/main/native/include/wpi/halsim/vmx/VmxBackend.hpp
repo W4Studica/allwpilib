@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 namespace wpilibvmx {
@@ -25,6 +26,18 @@ class VmxBackend {
   virtual void ReleaseDigital(int vmxChannel) = 0;
   virtual void SetDigital(int vmxChannel, bool value) = 0;
   virtual bool GetDigital(int vmxChannel) = 0;
+
+  /// Claims an analog input channel. Returns false if it could not be set up.
+  virtual bool InitAnalog(int vmxChannel) = 0;
+  virtual void ReleaseAnalog(int vmxChannel) = 0;
+  /// Reads the averaged voltage. Returns false if no valid reading is available.
+  virtual bool GetAnalogVoltage(int vmxChannel, double* volts) = 0;
+
+  /// Claims a quadrature encoder on two channels. Identified by channel A.
+  virtual bool InitEncoder(int vmxChannelA, int vmxChannelB) = 0;
+  virtual void ReleaseEncoder(int vmxChannelA) = 0;
+  /// Reads the raw tick count since the encoder was claimed.
+  virtual bool GetEncoderCount(int vmxChannelA, int32_t* count) = 0;
 };
 
 /// Creates the backend selected at build time.

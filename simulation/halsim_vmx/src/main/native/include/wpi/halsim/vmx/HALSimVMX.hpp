@@ -5,6 +5,9 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -17,7 +20,7 @@
 namespace wpilibvmx {
 
 /**
- * Connects the simulation HAL to VMX hardware. Currently only digital I/O.
+ * Connects the simulation HAL to VMX hardware. Currently digital I/O, analog inputs and quadrature encoders.
  *
  * Pin state (initialized, direction) is reconciled by a polling thread because
  * the sim HAL sets "initialized" before it sets the direction, so the mode
@@ -26,7 +29,7 @@ namespace wpilibvmx {
  */
 class HALSimVMX {
  public:
-  HALSimVMX(std::unique_ptr<VmxBackend> backend, ChannelMap dioMap);
+  HALSimVMX(std::unique_ptr<VmxBackend> backend, ChannelMaps maps);
   ~HALSimVMX();
   HALSimVMX(const HALSimVMX&) = delete;
   HALSimVMX& operator=(const HALSimVMX&) = delete;
@@ -50,13 +53,39 @@ class HALSimVMX {
     bool appliedInput = false;
   };
 
+  struct AnalogPin {
+    int channel = 0;
+    int vmxChannel = -1;
+    bool applied = false;
+  };
+
+  struct EncoderPin {
+    int index = 0;
+    // Channels currently applied to the backend (VMX numbering).
+    int vmxA = -1;
+    int vmxB = -1;
+    bool applied = false;
+    // The Studica Encoder has no reset, so reset is an offset on the raw count.
+    int32_t offset = 0;
+    int32_t lastRaw = 0;
+    bool haveLast = false;
+    std::chrono::steady_clock::time_point lastTime;
+  };
+
   static void OnDioValue(const char* name, void* param,
                          const HAL_Value* value);
-  void PollDio(DioPin& pin);
+  void PollDio(DioPin& pin, bool ownedByEncoder);
+  void PollAnalog(AnalogPin& pin);
+  void PollEncoder(EncoderPin& pin);
+
+  /// WPILib DIO channels used as encoder A/B by encoders that are mapped.
+  std::set<int> EncoderOwnedDioChannels() const;
 
   std::unique_ptr<VmxBackend> m_backend;
-  ChannelMap m_dioMap;
+  ChannelMaps m_maps;
   std::vector<DioPin> m_dio;
+  std::vector<AnalogPin> m_analog;
+  std::vector<EncoderPin> m_encoders;
   std::mutex m_mutex;
   std::thread m_thread;
   std::atomic<bool> m_running{false};

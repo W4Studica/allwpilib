@@ -25,13 +25,18 @@ int HALSIM_InitExtension(void) {
 
   HAL_OnShutdown(nullptr, [](void*) { gSim.reset(); });
 
-  auto dioMap = ChannelMap::FromEnv("HALSIMVMX_DIO_MAP");
-  if (dioMap.size() == 0) {
+  auto maps = ChannelMaps::FromEnv();
+  if (maps.dio.size() == 0) {
     std::puts(
         "HALSim VMX: HALSIMVMX_DIO_MAP is not set; no DIO channels mapped");
   }
+  if (maps.analog.size() == 0) {
+    std::puts(
+        "HALSim VMX: HALSIMVMX_ANALOG_MAP is not set; no analog channels "
+        "mapped");
+  }
 
-  gSim = std::make_unique<HALSimVMX>(CreateBackend(), std::move(dioMap));
+  gSim = std::make_unique<HALSimVMX>(CreateBackend(), std::move(maps));
   gSim->Start();
 
   std::puts("HALSim VMX Extension Initialized");

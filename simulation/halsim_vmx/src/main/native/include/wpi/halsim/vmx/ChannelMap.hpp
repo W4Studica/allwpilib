@@ -35,4 +35,13 @@ class ChannelMap {
   std::map<int, int> m_map;
 };
 
+/// One map per kind of channel. Each is read from its own environment variable.
+struct ChannelMaps {
+  ChannelMap dio;
+  ChannelMap analog;
+
+  /// HALSIMVMX_DIO_MAP and HALSIMVMX_ANALOG_MAP.
+  static ChannelMaps FromEnv();
+};
+
 }  // namespace wpilibvmx
