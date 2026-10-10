@@ -13,7 +13,7 @@
 ```
 경로 A (주 경로)  로봇 코드 --studica_driver::*--> vmxpi_hal_cpp --> VMX 하드웨어
 경로 B (선택)     로봇 코드 --WPILib 표준 클래스--> sim HAL --halsim_vmx--> studica_driver::* --> VMX
-공통               robot_manager: 프로그램 실행/재시작, MockDS(enable/모드), 안전처리
+공통               robot_manager: 프로그램 실행/재시작, 플랫폼 프로필 (MockDS는 사용자가 작성, 범위 밖)
 ```
 
 - **경로 A에는 halsim_vmx가 필요 없다.** 필요한 것은 (1) 라이브러리 링크(`studica_drivers`), (2) enable 상태 전달(§2), (3) **프로세스당 VMXPi 하나를 공유**(§3).
@@ -35,7 +35,7 @@
 | `DutyCycleEncoder` | `DutyCycle` `Initialized`, `Frequency`, `Output` | HW→sim | (보류) | **보류.** Studica 쪽은 12비트(4095) 절대 엔코더용 VMX 캡처로 **도(degree) 값만** 반환하고 원시 duty/주파수를 노출하지 않음. 되돌려 계산하려면 센서 프로토콜을 가정해야 해서 조용히 틀린 값이 나올 위험 |
 | IMU (`OnboardIMU` 계열) | `IMU` `Yaw`, `AngleX/Y/Z`, `GyroRateX/Y/Z`, `AccelX/Y/Z` (setter만 있고 전역 1개, "초기화됨" 신호 없음) | HW→sim | `Imu`(navX): `GetYaw/Pitch/Roll`, `GetRawGyroX/Y/Z`, `GetRawAccelX/Y/Z`, `IsConnected`, `IsCalibrating` | **구현됨.** 신호가 없어서 `HALSIMVMX_IMU=1`로 명시적으로 켬. 변환(**하드웨어 미검증 가정**): 도→라디안, deg/s→rad/s, g→m/s². navX yaw와 Z축 각속도는 시계 방향이 양수이고 WPILib은 반시계 방향이 양수라서 **부호를 뒤집음**. roll/pitch/X·Y 각속도/가속도는 그대로 전달. 연결 안 됨/보정 중이면 값을 갱신하지 않음. 쿼터니언은 sim HAL에 setter가 없어 미지원 |
 | `I2C` | `I2C` `Initialized`, Read/Write **버퍼 콜백** | 양방향 | (보류) | **보류.** sim HAL이 `deviceAddress`를 콜백에 넘기지 않음(`hal/src/main/native/sim/mockdata/I2CData.cpp`: 주소는 받지만 `write(buf, size)`/`read(buf, count)`만 호출). 그래서 어떤 장치로 가는 요청인지 알 수 없고, `transaction`도 쓰기 콜백 뒤에 읽기 콜백이 따로 호출돼 repeated-start 쌍을 알 수 없음. 주소를 넘기려면 allwpilib 본체 수정이 필요해 merge 방침에 어긋남. 우회(주소를 환경변수로 하나만 고정)는 다중 장치 버스에서 쓸 수 없음. Studica I2C 장치(`Cobra` 등)는 Studica API로 직접 사용 |
-| `DriverStation` | `DriverStation` `Enabled`, `RobotMode`, `OpMode`, `EStop`, `DsAttached`, `Joystick*` | → robot_manager | (하드웨어 클래스 없음) | MockDS. §2 |
+| `DriverStation` | `DriverStation` `Enabled`, `RobotMode`, `OpMode`, `EStop`, `DsAttached`, `Joystick*` | 사용자의 MockDS가 채움 | (하드웨어 클래스 없음) | 우리는 읽기만 함. §2 |
 
 ### Studica에만 있고 WPILib 표준 대응이 없는 장치
 
@@ -64,14 +64,14 @@
 | **S4 (권장)** | **우리 쪽** 헬퍼(향후 `vmxVendordep`, `studica_drivers` 밖)가 `Titan`을 감싸 `DriverStation` enable에 맞춰 `Enable()`을 호출하고 종료/disabled 때 `Enable(false)`, 제어 중에는 50 Hz 재전송. 헬퍼를 안 쓰고 S1처럼 직접 호출해도 됨 | studica_control의 titan 컴포넌트도 타이머로 50 Hz 재전송. `studica_drivers`를 고치지 않으므로 Titan 객체 생성에 훅을 걸 수 없음 |
 | 하드웨어 안전망 | 프로세스가 죽어도 Titan이 **200 ms 후 스스로 정지**(`titan.hpp` 주석, ROS2 README의 "CAN Watchdog") | 소프트웨어 버그에 대비한 마지막 방어선 |
 
-MockDS 자체는 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop`)를 채우는 것. **robot_manager가 로봇 프로그램에 enable/모드를 전달하는 IPC**가 필요하다(소켓/파일 등). 대회 진행 신호를 받는 방법(네트워크/GPIO/파일)은 **미정**.
+**MockDS는 사용자가 로봇 코드로 작성한다(이 프로젝트 범위 밖).** MockDS가 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop`)를 채우면, 우리 쪽(Titan 헬퍼, 안전 처리)은 그 값을 **읽기만** 한다. `robot_manager`도 관여하지 않는다.
 
 ## 3. GitHub 조사 결과와 열린 질문
 
 ### 확인된 것 (Studica-Robotics/ROS2 `f97edec` 코드와 README 근거)
 
 - **VMX(`pigpio`)는 한 프로세스가 연다.** README/`setup_permissions.sh`에 "pigpio가 `/dev/mem`에 접근하고 **PID 파일을 잠그기 때문에 root 필요**"라고 되어 있고, `studica_control`도 실패 시 "pigpio may be unavailable or in use"라고 로그를 남긴다. WPILib 로봇 프로그램은 어차피 단일 프로세스이므로 이 제약은 문제가 되지 않는다.
-  - **VMX를 여는 것은 로봇 프로그램 프로세스 하나.** `robot_manager`는 VMX를 열지 않고 프로세스 수명 관리와 MockDS 전달만 한다. (진단 도구 등 다른 프로세스가 VMX를 열지 않도록만 주의)
+  - **VMX를 여는 것은 로봇 프로그램 프로세스 하나.** `robot_manager`는 VMX를 열지 않고 프로세스 수명 관리만 한다. (진단 도구 등 다른 프로세스가 VMX를 열지 않도록만 주의)
 - **실행은 root(sudo)로 해야 한다.** deploy 스크립트와 `robot_manager` 서비스가 root로 로봇 프로그램을 띄워야 함.
 - **VMXPi는 프로세스 안에서 하나를 만들어 공유하는 것이 검증된 패턴이다.** `studica_control`은 `manual_composition.cpp`에서 `VMXPi(true, 50)`를 **한 번만** 만들어 모든 컴포넌트에 `shared_ptr`로 넘긴다.
 - **Studica 클래스 생성자의 기본 인자는 함정이다.** `Titan(...)`, `Servo(...)`, `Encoder(...)`, `DIO(...)` 등 대부분이 `vmx = std::make_shared<VMXPi>(true, 50)`가 기본값이고, `Imu()`는 아예 새로 만든다. 사용자가 인자 없이 Studica 클래스를 쓰면 **VMXPi가 장치 수만큼 생긴다.**
@@ -95,6 +95,8 @@ MockDS 자체는 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop
 |---|---|---|---|
 | (미작성) | DIO/Analog/PWM/Encoder | | VMX-pi 핀맵 문서 확인 필요 |
 
+> OS/커널 버전에 따라 번호 오프셋이 필요할 수 있다는 정황이 있음(미검증, 값 모름). 이 차이는 `robot_manager`가 플랫폼 프로필로 정해서 `HALSIMVMX_*_MAP` 환경변수로 넘긴다. `halsim_vmx`에는 오프셋 옵션을 넣지 않았다. 자세한 내용은 `robot_manager/README.md`.
+
 ## 5. XRP 구현에서 가져올 패턴 (경로 B를 만들 때)
 
 참고: `simulation/halsim_xrp/`
@@ -111,5 +113,5 @@ MockDS 자체는 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop
 2. `halsim_vmx` 골격: `HALSIM_InitExtension`에서 **VMXPi 하나를 만들어 소유**하고 `SharedVMX()`로 노출. DriverStation 구독.
 3. 표준 클래스 연결을 쉬운 것부터: DIO → AnalogIn → Encoder → PWM/Servo → DutyCycle → IMU → I2C.
 4. (삭제됨) `studica_drivers`는 수정하지 않는다.
-5. `robot_manager` 최소 버전: root로 로봇 프로그램 실행/재시작 + MockDS 전달(IPC).
+5. `robot_manager` 최소 버전: root로 로봇 프로그램 실행/재시작 + 플랫폼 프로필.
 6. 우리 GradleRIO에 VMX deploy 타깃(Studica-Robotics/GradleRIO 참고).
