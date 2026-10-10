@@ -32,7 +32,11 @@ if(WPILIB_WITH_STUDICA)
     set_target_properties(halsim_vmx_studica PROPERTIES DEBUG_POSTFIX "d")
     # studica_drivers only asks for C++17; this plugin uses C++20 library features.
     target_compile_features(halsim_vmx_studica PRIVATE cxx_std_20)
-    target_include_directories(halsim_vmx_studica PRIVATE src/main/native/include)
+    target_include_directories(
+        halsim_vmx_studica
+        PUBLIC src/studica/native/include
+        PRIVATE src/main/native/include
+    )
     target_link_libraries(halsim_vmx_studica PRIVATE studica_drivers)
     set_property(TARGET halsim_vmx_studica PROPERTY FOLDER "libraries")
     install(TARGETS halsim_vmx_studica EXPORT halsim_vmx_studica)

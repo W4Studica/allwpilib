@@ -16,13 +16,20 @@
 #include "encoder.hpp"
 #include "imu.hpp"
 #include "wpi/halsim/vmx/BackendPlugin.hpp"
+#include "wpi/halsim/vmx/SharedVMX.hpp"
 #include "wpi/halsim/vmx/VmxBackend.hpp"
 
 namespace wpilibvmx {
 
+std::shared_ptr<VMXPi> SharedVMX() {
+  // Thread-safe lazy initialization. Never reset: devices may outlive any one backend.
+  static std::shared_ptr<VMXPi> vmx = std::make_shared<VMXPi>(true, 50);
+  return vmx;
+}
+
 class StudicaBackend : public VmxBackend {
  public:
-  StudicaBackend() : m_vmx{std::make_shared<VMXPi>(true, 50)} {}
+  StudicaBackend() : m_vmx{SharedVMX()} {}
 
   bool InitDigital(int vmxChannel, bool isInput) override {
     if (!m_vmx || !m_vmx->IsOpen() || m_dio.contains(vmxChannel)) {

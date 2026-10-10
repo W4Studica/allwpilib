@@ -75,7 +75,7 @@ Studica 백엔드(`libhalsim_vmx_studica.so`)는 VMX 위에서 한 번만 빌드
 | 방안 | 내용 | 비고 |
 |---|---|---|
 | **S1 (시작점)** | 사용자 코드가 `DriverStation::IsEnabled()`로 `titan.Enable(...)`을 호출. 헬퍼 제공 | Studica 클래스 수정 없음. 사용자가 빼먹을 수 있음 |
-| **S4 (권장)** | **우리 쪽** 헬퍼(향후 `vmxVendordep`, `studica_drivers` 밖)가 `Titan`을 감싸 `DriverStation` enable에 맞춰 `Enable()`을 호출하고 종료/disabled 때 `Enable(false)`, 제어 중에는 50 Hz 재전송. 헬퍼를 안 쓰고 S1처럼 직접 호출해도 됨 | studica_control의 titan 컴포넌트도 타이머로 50 Hz 재전송. `studica_drivers`를 고치지 않으므로 Titan 객체 생성에 훅을 걸 수 없음 |
+| **S4 (구현됨)** | **`TitanEnableGuard<TitanT>`**(헤더 전용 템플릿, `studica_drivers` 밖): HAL 컨트롤 워드(`HAL_GetUncachedControlWord`)에서 enable/E-stop을 읽어 **상태가 바뀔 때만** `titan.Enable()` 호출. 중지/소멸자에서는 항상 `Enable(false)`. 모터 명령은 보내지 않으므로 사용자 코드가 enabled 동안 150 ms 이내로 `SetSpeed`를 계속 보내야 함. `Enable(bool)`만 있으면 되는 템플릿이라 하드웨어 없이 테스트함 | **주의: sim HAL은 `DsAttached`가 true일 때만 컨트롤 워드를 채운다.** 사용자의 MockDS는 `setEnabled(true)`와 함께 `setDsAttached(true)`도 해야 함. Titan은 가드보다 먼저 만들어야 함 |
 | 하드웨어 안전망 | 프로세스가 죽어도 Titan이 **200 ms 후 스스로 정지**(`titan.hpp` 주석, ROS2 README의 "CAN Watchdog") | 소프트웨어 버그에 대비한 마지막 방어선 |
 
 **MockDS는 사용자가 로봇 코드로 작성한다(이 프로젝트 범위 밖).** MockDS가 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop`)를 채우면, 우리 쪽(Titan 헬퍼, 안전 처리)은 그 값을 **읽기만** 한다. `robot_manager`도 관여하지 않는다.
@@ -89,7 +89,7 @@ Studica 백엔드(`libhalsim_vmx_studica.so`)는 VMX 위에서 한 번만 빌드
 - **실행은 root(sudo)로 해야 한다.** deploy 스크립트와 `robot_manager` 서비스가 root로 로봇 프로그램을 띄워야 함.
 - **VMXPi는 프로세스 안에서 하나를 만들어 공유하는 것이 검증된 패턴이다.** `studica_control`은 `manual_composition.cpp`에서 `VMXPi(true, 50)`를 **한 번만** 만들어 모든 컴포넌트에 `shared_ptr`로 넘긴다.
 - **Studica 클래스 생성자의 기본 인자는 함정이다.** `Titan(...)`, `Servo(...)`, `Encoder(...)`, `DIO(...)` 등 대부분이 `vmx = std::make_shared<VMXPi>(true, 50)`가 기본값이고, `Imu()`는 아예 새로 만든다. 사용자가 인자 없이 Studica 클래스를 쓰면 **VMXPi가 장치 수만큼 생긴다.**
-  - **`studica_drivers`는 수정하지 않는다(규칙).** 그래서 기본 인자를 바꿀 수 없다. 대신 `halsim_vmx`가 `wpilibvmx::SharedVMX()`로 프로세스 공유 인스턴스를 노출하고, **사용자는 Studica 객체를 만들 때 이 인스턴스를 인자로 넘기는 것을 규칙으로 안내**한다. 인자를 빼먹으면 `VMXPi`가 하나 더 생기는 함정이 남는다(하드웨어에서 실제로 문제인지부터 확인).
+  - **`studica_drivers`는 수정하지 않는다(규칙).** 그래서 기본 인자를 바꿀 수 없다. 대신 Studica 플러그인 라이브러리가 `wpilibvmx::SharedVMX()`(`wpi/halsim/vmx/SharedVMX.hpp`)로 프로세스 공유 인스턴스를 노출한다(구현됨, 확장의 Studica 백엔드도 같은 인스턴스를 씀). **사용자는 Studica 객체를 만들 때 이 인스턴스를 인자로 넘기는 것을 규칙으로 안내**한다: `studica_driver::Titan titan(42, 20000, 0.0f, wpilibvmx::SharedVMX());`. 인자를 빼먹으면 `VMXPi`가 하나 더 생기는 함정이 남는다(하드웨어에서 실제로 문제인지부터 확인). 사용자 프로그램이 `halsim_vmx_studica`를 직접 링크해야 하며, C++ 전용이다(Java용 JNI 래퍼는 없음).
   - 대안: 문서로 "항상 `halsim_vmx`가 주는 VMX를 넘겨라"라고 안내(사용자 실수 위험).
 - **Titan 워치독**: 장치가 약 150~200 ms 명령이 없으면 안전 상태로 들어가고, ROS2 드라이버는 4개 모터 속도(0 포함)를 **50 Hz로 계속 재전송**해서 "정지"를 유지한다. halsim_vmx도 같은 방식이어야 한다.
 - `examples/!watchdog_example/`에는 **`Makefile`만 있고 소스가 없다**(이름의 `!`는 제외/미완 표시로 보임). 참고 자료 없음.
@@ -124,7 +124,7 @@ Studica 백엔드(`libhalsim_vmx_studica.so`)는 VMX 위에서 한 번만 빌드
 ## 6. 구현 순서 제안
 
 1. **하드웨어 확인**(§3 "아직 모르는 것" 1번)과 VMX HAL 헤더 확보 → §4 채널표 작성.
-2. `halsim_vmx` 골격: `HALSIM_InitExtension`에서 **VMXPi 하나를 만들어 소유**하고 `SharedVMX()`로 노출. DriverStation 구독.
+2. (완료) `halsim_vmx` 골격 + `SharedVMX()` + `TitanEnableGuard`.
 3. 표준 클래스 연결을 쉬운 것부터: DIO → AnalogIn → Encoder → PWM/Servo → DutyCycle → IMU → I2C.
 4. (삭제됨) `studica_drivers`는 수정하지 않는다.
 5. `robot_manager` 최소 버전: root로 로봇 프로그램 실행/재시작 + 플랫폼 프로필.
