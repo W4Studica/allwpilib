@@ -27,6 +27,10 @@ python3 --version
 
 - [ ] OS, 커널, Pi 모델, glibc, g++, java, python을 기록했다.
 
+**이미 확인된 값(2026-10-10, 개발용 VMX 한 대, SSH 로그인 출력에서):** Ubuntu 26.04.1 LTS, 커널 `7.0.0-1020-raspi`(aarch64),
+glibc 2.43, OpenJDK 25.0.4.1(`openjdk-25-jre-headless`), `vmxpi-hal_1.0~20240704` 설치 성공. Pi 모델, g++, python3, `VMXPi.h` 유무는 아직 모름.
+커널이 6.6보다 훨씬 새로워서, 핀 번호 오프셋(§3)이 실제로 생길 가능성이 있다.
+
 참고(이 PC에서 확인한 사실): WPILib 2027의 arm64 툴체인은 `aarch64-trixie-linux-gnu`(Debian 13, GCC 14.3, glibc 2.41)뿐이다.
 Studica 문서상 VMX 공식 이미지는 Ubuntu 22.04(glibc 2.35)이다.
 
