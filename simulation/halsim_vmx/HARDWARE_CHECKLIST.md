@@ -227,6 +227,14 @@ rm ~/robotCommand; sudo systemctl start robot_manager
 ```
 기대: `stopping robot program ...` 다음에 `robot program stopped after 0.x s`(`SIGKILL` 없음). `sending SIGKILL`이 나오면 HAL이 `SIGTERM`으로 안 끝난다는 뜻이다(미확인).
 
+**첫 실측(2026-10-10) — 두 가지 문제가 나왔다:**
+1. **`robot_manager`가 자식을 정리하기 전에 종료했다.** systemd 로그 `State 'final-sigterm' timed out. Killing.` / `Killing process ... (hal_hold) with signal SIGKILL`: `robot_manager`가 이미 끝난 뒤에 남은 `hal_hold`를 systemd가 15초 뒤 `SIGKILL`했다.
+   원인: 시그널 핸들러가 `stop()`을 데몬 스레드로 돌리는데, 리더가 끝나면 메인의 `run()`이 먼저 돌아와 인터프리터가 종료되면서 그룹 정리(유예 후 `SIGKILL`)가 끊겼다. 단위 테스트는 `stop()`을 직접 호출해서 놓쳤다.
+   **수정:** 종료 스레드를 메인이 `join`한다. 이 상황을 재현하는 테스트(`test_the_service_finishes_stopping_the_program_before_it_exits`)를 먼저 만들어 실패하는 것을 확인한 뒤 고쳤다(PC). 로봇 재확인은 아직.
+2. **HAL은 `SIGTERM`에서 정리만 하고 프로세스를 끝내지 않는 것으로 보인다.** `kill -TERM`을 보낸 `hal_hold`가 13.7초 뒤에도 살아 있었고, 로그는 `VMX HAL:  SIGTERM signal received.` -> `closing pigpio library to release VMX resources.` -> `pigpio library closed and VMX resources released.` -> `At VMXPi::Terminate` -> `Stopped RemoteServer` -> `spiClose: pigpio uninitialised` / `Error closing SPI AUX Channel 2.`에서 끝난다
+   (`Ctrl-C`/SIGINT에서는 `Exiting VMX-pi HAL application ... [normal exit]`가 나왔다). 핸들러가 VMX 자원을 정리하고 돌아오기만 하는지는 `gdb`로 확인 예정(**가설, 미확인**). 사실이면 `robot_manager`의 `SIGTERM`은 매번 `stop_grace_seconds`를 다 기다린 뒤 `SIGKILL`로 끝난다(VMX 자원은 이미 정리된 상태).
+   확인할 것: `SIGINT`로는 깨끗하게 빨리 끝나는지.
+
 ### 6e. 기존 확인 항목
 
 최소 Java 로봇 프로젝트(또는 PC에서 `./gradlew deploy`한 결과)로 확인한다. 수동 실행 예(명령 미검증):
