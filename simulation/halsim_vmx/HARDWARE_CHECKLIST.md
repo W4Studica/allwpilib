@@ -233,7 +233,10 @@ rm ~/robotCommand; sudo systemctl start robot_manager
    **수정:** 종료 스레드를 메인이 `join`한다. 이 상황을 재현하는 테스트(`test_the_service_finishes_stopping_the_program_before_it_exits`)를 먼저 만들어 실패하는 것을 확인한 뒤 고쳤다(PC). 로봇 재확인은 아직.
 2. **HAL은 `SIGTERM`에서 정리만 하고 프로세스를 끝내지 않는 것으로 보인다.** `kill -TERM`을 보낸 `hal_hold`가 13.7초 뒤에도 살아 있었고, 로그는 `VMX HAL:  SIGTERM signal received.` -> `closing pigpio library to release VMX resources.` -> `pigpio library closed and VMX resources released.` -> `At VMXPi::Terminate` -> `Stopped RemoteServer` -> `spiClose: pigpio uninitialised` / `Error closing SPI AUX Channel 2.`에서 끝난다
    (`Ctrl-C`/SIGINT에서는 `Exiting VMX-pi HAL application ... [normal exit]`가 나왔다). 핸들러가 VMX 자원을 정리하고 돌아오기만 하는지는 `gdb`로 확인 예정(**가설, 미확인**). 사실이면 `robot_manager`의 `SIGTERM`은 매번 `stop_grace_seconds`를 다 기다린 뒤 `SIGKILL`로 끝난다(VMX 자원은 이미 정리된 상태).
-   확인할 것: `SIGINT`로는 깨끗하게 빨리 끝나는지.
+   **확인됨(2026-10-10):** `gdb`로 `SIGTERM` 3초 뒤 스레드를 보니 메인 스레드는 `hal_hold`의 `main()` 안 `nanosleep`(대기 루프)에 그대로 있고 pigpio 스레드 3개는 사라졌다 = HAL의 `SIGTERM` 핸들러는 VMX/pigpio를 정리하고 **돌아오기만 한다.**
+   **`SIGINT`는 0.21초 만에 깨끗하게 종료**한다(`Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit]`; 이때 찍히는 `Signal 2 received by PIGPIOClient::signal_func()`와 스택 출력은 HAL의 정상 출력이다).
+   **조치:** `robot_manager`가 `SIGINT` -> `SIGTERM` -> `SIGKILL` 순서로 멈춘다(설정 `stop_signals`). PC에서 신호 순서/폴백/설정 파싱을 테스트했다(39개). **서비스로 돌린 `hal_hold`가 실제로 `stopped by SIGINT after 0.x s`로 끝나는지는 로봇에서 재확인 필요.**
+   참고: 옛 Studica GradleRIO 포크는 `frcKillRobot.sh -t`(재시작은 `-t -r`)로 멈추고 `/home/lvuser/robotCommand`에 명령을 쓴다. 그 스크립트가 보내는 신호는 소스로 확인하지 못했다(VMX 이미지 안에 있음).
 
 ### 6e. 기존 확인 항목
 
