@@ -117,7 +117,7 @@ sudo ./two_vmx
 
 - [ ] `VMXChannelIndex` ↔ 물리 핀 대응표를 만들었다 → `DESIGN.md` §4 표에 채운다
 - [ ] 커널/OS 버전에 따라 번호가 어긋나는지 확인했다. 어긋난다면: 어느 버전부터 ____, 얼마 ____
-  - **단서(2026-10-10):** HAL을 열 때 `RPI GPIO Interrupt Enable:  PI_BAD_ISR_INIT.`가 3번 나온다. pigpio의 GPIO 인터럽트는 sysfs GPIO(`/sys/class/gpio`)를 쓰는데, 커널 6.6 이후 sysfs 번호에 오프셋이 생겼거나 7.0에서는 sysfs GPIO가 아예 꺼져 있을 수 있다. 사용자가 기억하는 "핀 번호에서 뺄 오프셋"이 이것일 가능성이 있다(미확인).
+  - **결과(2026-10-10, 커널 7.0.0-1020-raspi):** HAL을 열 때 `RPI GPIO Interrupt Enable:  PI_BAD_ISR_INIT.`가 3번 나온다. 원인 확인: **`/sys/class/gpio`가 없고 `# CONFIG_GPIO_SYSFS is not set`** 이다. pigpio의 GPIO 인터럽트는 sysfs GPIO를 쓰므로 **이 커널에서는 구조적으로 초기화할 수 없다.** 사용자가 기억하던 "핀 번호에서 뺄 오프셋"은 sysfs가 아직 켜져 있던 커널(6.6 부근)의 이야기로 보이며, 이 커널에서는 오프셋이 아니라 인터럽트 기능 부재가 문제다. **핀 읽기/쓰기에 오프셋이 필요한지는 아직 모른다**(아래 핀 토글 테스트로 확인).
   - 확인: `ls /sys/class/gpio; for c in /sys/class/gpio/gpiochip*; do echo $c $(cat $c/base) $(cat $c/ngpio) $(cat $c/label); done; grep GPIO_SYSFS /boot/config-$(uname -r)`
   - 영향: 인터럽트를 쓰는 기능(`studica_driver::DIO::EnableInterrupt` 등). 우리 `halsim_vmx`의 DIO/Analog/Encoder/IMU는 인터럽트를 쓰지 않는다(폴링).
 - [ ] 오프셋이 있으면 `robot_manager`의 `config.json` 프로필(`kernel_regex`)에 `HALSIMVMX_DIO_MAP` 등으로 적었다
