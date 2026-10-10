@@ -50,6 +50,11 @@ Studica 문서상 VMX 공식 이미지는 Ubuntu 22.04(glibc 2.35)이다.
    > - 라이브러리(`/usr/local/lib/vmxpi/libvmxpi_hal_cpp.so` 등)만 들어 있고 **`VMXPi.h` 헤더는 없다.** 이 deb만으로는 `studica_drivers`/플러그인을 컴파일할 수 없다. 헤더는 공식 이미지의 `/usr/local/include/vmxpi/`에서 가져와야 한다.
    > - `libvmxpi_hal_cpp.so`가 필요로 하는 것: 최대 `GLIBC_2.34`, `GLIBCXX_3.4.29`, 외부 라이브러리는 `libstdc++`/`libgcc_s`/`libc`뿐. 상위 호환이라 22.04보다 새로운 OS에서도 로드될 가능성이 높다(실행해 본 것은 아님).
    > - pigpio는 별도 `.so`가 아니라 라이브러리 안에 들어 있는 것으로 보인다(`PIGPIOClient` 심볼). 동작 방식은 모른다.
+   >
+   > **헤더가 들어 있는 두 번째 deb: `vmx-hal_1.0~20240704_arm64.deb`**(역시 비공식 재패키징, 13MB, 설명: "libraries, headers, examples and tools").
+   > - `/usr/local/include/vmxpi/VMXPi.h` 등 헤더 23개, `libvmxpi_hal_cpp.so`/`.a`, `studica_drivers` 라이브러리, 테스트 도구(`/usr/local/bin`), `/usr/local/startup/initenv.sh`(YDLIDAR udev 규칙을 만드는 스크립트일 뿐이며 설치 때 자동 실행되지 않음)가 들어 있다. 설치 스크립트는 `ldconfig`만 한다.
+   > - **`vmxpi-hal`과 같은 파일(`/usr/local/lib/vmxpi/*`)을 설치하므로 충돌한다.** 먼저 `sudo apt remove -y vmxpi-hal` 한 뒤 `sudo apt install -y ./vmx-hal_1.0~20240704_arm64.deb` 한다.
+   > - 이 PC에서 이 헤더로 컴파일해 본 결과(링크/실행 아님, x86 오브젝트): `studica_drivers`의 `.cpp` 17개 전부 컴파일 OK, 우리 `StudicaBackend.cpp`는 `-Wall -Wextra` 경고 없이 컴파일 OK.
 2. `studica_drivers`를 빌드/설치한다(Studica ROS2 README 방식):
    ```bash
    cd allwpilib/studica_drivers && make && sudo make install
@@ -133,7 +138,7 @@ g++ -std=c++20 -shared -fPIC -O2 \
 ```
 방법 B — CMake: `-DWPILIB_WITH_STUDICA=ON`로 `halsim_vmx_studica` 타깃을 빌드한다. allwpilib 전체 설정이 따라오므로 C++23이 되는 GCC(13 이상)가 필요하다.
 
-- [ ] 컴파일 성공  (실패 시 오류를 기록하고 `StudicaBackend.cpp`를 고친다)
+- [ ] 컴파일 성공  (이 PC에서 진짜 헤더로는 이미 컴파일됨. 로봇의 g++ 15.2.0에서도 되는지 확인. 실패 시 오류를 기록하고 `StudicaBackend.cpp`를 고친다)
 - [ ] 링크 성공
 - [ ] `nm -D libhalsim_vmx_studica.so | grep wpilibvmx_` 에 `wpilibvmx_CreateBackendV1`, `wpilibvmx_DestroyBackendV1`이 보인다
 
