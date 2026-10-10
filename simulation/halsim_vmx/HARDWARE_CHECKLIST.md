@@ -201,6 +201,9 @@ FlexDIO/AnalogIn/HiCurrDIO/CommDIO별 채널 인덱스 범위와 채널마다의
 `HALSIMVMX_DIO_MAP="0:<N>,1:<M>"`(WPILib DIO 0 -> VMX 채널 N, DIO 1 -> VMX 채널 M). 출력 N과 입력 M을 **점퍼선으로 연결**하면 루프백으로 검사하고(`loopback OK`), 연결이 없으면 출력 핀을 멀티미터/LED로 본다. `build_on_robot.sh`가 마지막에 실행 명령을 출력한다.
 로그에 `HALSim VMX: DIO 0 -> VMX channel N (output)`가 나오면 claim 성공, `cannot claim VMX channel ...`이 나오면 실패(채널이 그 용도를 지원하지 않거나 이미 쓰는 중).
 
+**두 번째 실행(점퍼선 연결 후) — 루프백 성공:** `wrote 0, read 0` / `wrote 1, read 1`이 10줄 모두 일치하고 `loopback OK`. **WPILib 시뮬레이션 HAL의 DIO -> `halsim_vmx` 확장 -> Studica 플러그인 -> VMX 하드웨어 -> 점퍼선 -> 입력 -> HAL의 전체 경로가 실제 로봇에서 동작한다.** (VMX 10 출력, 11 입력, `HALSIMVMX_DIO_MAP="0:10,1:11"`.)
+**알려진 문제 — 프로그램이 끝나지 않는다:** `hal_dio_test`가 `VMX HAL:  pigpio library closed.`까지 출력한 뒤 프로세스가 종료되지 않는다(`timeout`이 60초 뒤 강제 종료, 종료 코드 124). 터미널에서 직접 실행하면 프롬프트가 안 돌아오고 `Ctrl-C`도 소용없다(HAL의 시그널 핸들러가 `Signal 2 received by PIGPIOClient::signal_func()`와 스택을 찍고 `Exiting VMX-pi HAL application ... [normal exit]`라고 하지만 종료되지 않는다). 스택: 메인 스레드는 `exit()` -> `_IO_flush_all`에서 stdio 락 대기, HAL 스레드들은 `fgets`, `accept`, `nanosleep`에서 대기. **stdin 가설은 틀렸다**(`< /dev/null`로도 멈춘다). 원인은 아직 모른다. `vmx_n`(HAL만, 확장 없음)은 정상 종료하므로 sim HAL/확장/`SharedVMX` 정적 소멸 순서와 관련됐을 가능성이 있다(추측). 이 문제는 `robot_manager`의 종료 순서(SIGTERM 후 5초 뒤 SIGKILL)와 직결된다.
+
 **첫 실행 결과(2026-10-10, 출력=VMX 10, 입력=VMX 11):** 확장 로드(`HAL Extensions: Successfully loaded extension`), 플러그인 사용, 두 채널 claim, 출력 값이 보드에 전달됨(SPI 쓰기 19회 -> 38회, CRC 오류 0)까지 **확인됐다.**
 루프백 읽기는 항상 1이었다(`wrote 0, read 1`). Studica `DIO`는 입력을 **풀업**으로 열기 때문에 연결되지 않은 입력은 항상 1을 읽는다. 배선(또는 보드 표기와 HAL 채널 번호의 차이)을 먼저 의심한다. **루프백 읽기는 아직 확인 안 됨.**
 배선과 확장을 가르려면 HAL/확장 없이 Studica `DIO`만 쓰는 `dio_probe`를 먼저 돌린다:
