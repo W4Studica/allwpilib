@@ -138,9 +138,11 @@ g++ -std=c++20 -shared -fPIC -O2 \
 ```
 방법 B — CMake: `-DWPILIB_WITH_STUDICA=ON`로 `halsim_vmx_studica` 타깃을 빌드한다. allwpilib 전체 설정이 따라오므로 C++23이 되는 GCC(13 이상)가 필요하다.
 
-- [ ] 컴파일 성공  (이 PC에서 진짜 헤더로는 이미 컴파일됨. 로봇의 g++ 15.2.0에서도 되는지 확인. 실패 시 오류를 기록하고 `StudicaBackend.cpp`를 고친다)
-- [ ] 링크 성공
-- [ ] `nm -D libhalsim_vmx_studica.so | grep wpilibvmx_` 에 `wpilibvmx_CreateBackendV1`, `wpilibvmx_DestroyBackendV1`이 보인다
+- [x] 컴파일 성공 — **2026-10-10 로봇(Ubuntu 26.04, g++ 15.2.0)에서 `install.sh`로 확인됨**
+- [x] 링크 성공 — `/opt/halsim_vmx/libhalsim_vmx_studica.so`(97KB), `ldd`에 `not found` 없음, `libvmxpi_hal_cpp.so`는 `/usr/local/lib/vmxpi`에서 해석됨
+- [x] `nm -D`에 `wpilibvmx_CreateBackendV1`, `wpilibvmx_DestroyBackendV1`, `wpilibvmx::SharedVMX()`가 보인다
+- (참고) `MakeBackendApi`의 람다가 약한 심볼로 같이 내보내진다. 해롭지 않지만 `-fvisibility=hidden`으로 숨길 수 있다.
+- **아직 안 한 것: 이 `.so`를 실제로 로드해서 하드웨어를 움직이는 것(§6).**
 
 ## 5. WPILib 라이브러리가 이 OS에서 로드되는가 (glibc)
 
@@ -225,7 +227,8 @@ Titan은 `Enable(true)` 전에는 명령을 무시하고, 200 ms 동안 CAN 메�
 
 ### `robot_manager` (레포: `W4Studica/Robot-Manager`, README의 설치 절차)
 
-- [ ] 설치 후 `systemctl status robot_manager`가 `active`
+- [x] 설치 후 `systemctl is-active robot_manager`가 `active` (로봇에서 확인됨. 단, `robotCommand`는 아직 없어서 프로그램을 돌려 본 건 아님)
+- [x] `./install.sh --sudoers`가 적용되고 `sudo -n systemctl enable robot_manager`가 비밀번호 없이 된다 (로봇에서 확인됨)
 - [ ] `/home/<user>/robotCommand`가 없으면 로그에 한 번만 대기 메시지가 나온다
 - [ ] 간단한 `robotCommand`(`sleep 600` 한 줄)를 두면 실행된다. `journalctl -u robot_manager -f`
 - [ ] 프로세스를 죽이면 다시 실행된다(크래시 반복 시 간격이 1→10초로 늘어난다)
