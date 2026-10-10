@@ -14,8 +14,10 @@ namespace wpilibvmx {
  * The one VMXPi of this process, created on first use.
  *
  * The Studica driver constructors default their last argument to
- * std::make_shared<VMXPi>(true, 50), i.e. a new VMXPi per device. studica_drivers must
- * not be modified, so pass this instead:
+ * std::make_shared<VMXPi>(true, 50), i.e. a new VMXPi per device. MEASURED on a VMX-pi
+ * (Ubuntu 26.04, kernel 7.0): two VMXPi in one process break the SPI link (hundreds of
+ * write CRC errors) and crash on exit, one works. So creating a Studica object without
+ * passing a VMXPi is a bug. studica_drivers must not be modified, so always pass this:
  *
  *   studica_driver::Titan titan(42, 20000, 0.0f, wpilibvmx::SharedVMX());
  *

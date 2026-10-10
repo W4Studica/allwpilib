@@ -97,7 +97,7 @@ Studica 백엔드(`libhalsim_vmx_studica.so`)는 VMX 위에서 한 번만 빌드
 
 ### 아직 모르는 것 (하드웨어 확인)
 
-1. **한 프로세스 안에서** `VMXPi` 인스턴스를 여러 개 만들면 실제로 실패하는가? (실패하면 기본 인자 함정이 실제 위험이 되고, 안 하면 큰 문제 아님. 이것이 핵심 확인 항목)
+1. ~~한 프로세스 안에서 `VMXPi` 인스턴스를 여러 개 만들면 실제로 실패하는가?~~ **확인됨(2026-10-10, Ubuntu 26.04 / 커널 7.0): 실패한다.** 2개를 만들면 SPI 쓰기 CRC 오류가 쏟아지고 종료 때 Segfault, 1개는 정상이다. **`SharedVMX()`는 필수이고, Studica 클래스를 인자 없이 만드는 것은 금지다.** (`HARDWARE_CHECKLIST.md` §2)
 2. **채널 번호 체계**: WPILib DIO/Analog/PWM 번호 ↔ `VMXChannelIndex` 대응표(§4)는 VMX-pi 핀맵 확인 후 작성. VMX HAL 헤더(`VMXPi.h`, `/usr/local/include/vmxpi`)가 필요한데 GitHub에는 없고 VMX OS 이미지에 설치되어 있음(README: `learn.studica.com/docs/ws/vmx/os-images`).
 4. **스레딩**: `DIO` 인터럽트 콜백은 VMX 백그라운드 스레드에서 실행됨. sim HAL 갱신은 스레드 안전하게 해야 함.
 5. **Java 지원**: `studica_drivers`는 C++ 전용. Java 사용자는 JNI 래퍼가 필요 → **1차 목표는 C++만**으로 한정 권장.

@@ -65,9 +65,9 @@ Studica 문서상 VMX 공식 이미지는 Ubuntu 22.04(glibc 2.35)이다.
    ```
    Titan이 연결돼 있으면 `titan_example`도 해 본다(바퀴를 띄운 상태에서).
 
-- [ ] `VMXPi.h`와 `libvmxpi_hal_cpp`가 있다
-- [ ] `studica_drivers` 빌드와 설치가 된다
-- [ ] 예제가 실제로 하드웨어 값을 읽거나 움직인다
+- [x] `VMXPi.h`와 `libvmxpi_hal_cpp`가 있다 (`vmx-hal` deb, 로봇에서 확인)
+- [ ] `studica_drivers` 빌드와 설치가 된다 (deb에 옛 버전이 이미 설치돼 있음. `install.sh --upgrade-drivers`로 새 복사본 설치는 미확인)
+- [x] **HAL이 이 OS에서 하드웨어와 통신한다**: VMX 보드(모델 0x32, 하드웨어 rev 60, 펌웨어 3.0.436)와 통신 확립, navX 인식 (인스턴스 1개일 때). 예제로 값을 읽어 본 것은 아님
 
 **기대**: 값이 읽히고 오류가 없다.
 **실패하면**: 로그 전체를 기록한다. `pigpio` 관련 오류면 이 OS에서 VMX HAL이 안 도는 것이다. 이 경우 OS를 22.04로 돌려야 하고, 그러면 §5의 glibc 문제를 다른 방법(호환 sysroot, 온디바이스 빌드)으로 풀어야 한다.
@@ -97,7 +97,10 @@ g++ -std=c++17 two_vmx.cpp -o two_vmx -I/usr/local/include/vmxpi -L/usr/local/li
 sudo ./two_vmx
 ```
 
-- [ ] 첫 번째 `IsOpen`: ____ / 두 번째 `IsOpen`: ____ / 크래시 여부: ____
+- [x] **결과(2026-10-10, 로봇 Ubuntu 26.04 / 커널 7.0): 한 프로세스에서 `VMXPi`를 둘 이상 만들면 깨진다.**
+  - 인스턴스 **2개**: 둘 다 `IsOpen: 1`이지만 SPI 쓰기가 실패한다(`Timeout waiting for comm ready HIGH during SPI transmit. Likely CRC ERROR`, `Write CRC Mismatches: 135`, `Write Failures: 45`), 이후 `Aborted read from bank 0, address 4, length 108` 재시도가 끝없이 이어지고 **Segfault(종료 코드 139)**.
+  - 인스턴스 **1개**(`vmx_n 1`): 정상. `Established communication with VMX board model 0x32, hardware rev 60, firmware version 3.0.436`, `Acquired navX-Sensor configuration`, 쓰기 19회/읽기 9172회에 CRC 불일치 0, 실패 0, 정상 종료.
+  - **결론: `SharedVMX()`는 필수다.** Studica 클래스를 인자 없이 만들면(기본 인자가 새 `VMXPi`를 만든다) 하드웨어 통신이 망가진다.
 
 **해석**:
 - 둘 다 `1`이고 크래시 없음 → 기본 인자 함정은 문제가 아니다. `SharedVMX()` 안내는 권고로 낮춰도 된다.
@@ -114,6 +117,9 @@ sudo ./two_vmx
 
 - [ ] `VMXChannelIndex` ↔ 물리 핀 대응표를 만들었다 → `DESIGN.md` §4 표에 채운다
 - [ ] 커널/OS 버전에 따라 번호가 어긋나는지 확인했다. 어긋난다면: 어느 버전부터 ____, 얼마 ____
+  - **단서(2026-10-10):** HAL을 열 때 `RPI GPIO Interrupt Enable:  PI_BAD_ISR_INIT.`가 3번 나온다. pigpio의 GPIO 인터럽트는 sysfs GPIO(`/sys/class/gpio`)를 쓰는데, 커널 6.6 이후 sysfs 번호에 오프셋이 생겼거나 7.0에서는 sysfs GPIO가 아예 꺼져 있을 수 있다. 사용자가 기억하는 "핀 번호에서 뺄 오프셋"이 이것일 가능성이 있다(미확인).
+  - 확인: `ls /sys/class/gpio; for c in /sys/class/gpio/gpiochip*; do echo $c $(cat $c/base) $(cat $c/ngpio) $(cat $c/label); done; grep GPIO_SYSFS /boot/config-$(uname -r)`
+  - 영향: 인터럽트를 쓰는 기능(`studica_driver::DIO::EnableInterrupt` 등). 우리 `halsim_vmx`의 DIO/Analog/Encoder/IMU는 인터럽트를 쓰지 않는다(폴링).
 - [ ] 오프셋이 있으면 `robot_manager`의 `config.json` 프로필(`kernel_regex`)에 `HALSIMVMX_DIO_MAP` 등으로 적었다
 
 **기대**: 대응표가 안정적이다. **오프셋이 없으면** 프로필 기능은 필요 없는 것이다(그러면 `robot_manager`는 systemd 유닛 하나로 대체할 수 있다).
