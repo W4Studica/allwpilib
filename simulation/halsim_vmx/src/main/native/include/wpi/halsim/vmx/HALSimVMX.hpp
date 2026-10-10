@@ -52,12 +52,14 @@ class HALSimVMX {
     // State currently applied to the backend.
     bool applied = false;
     bool appliedInput = false;
+    bool claimFailedLogged = false;  // log a failed claim once, not on every poll
   };
 
   struct AnalogPin {
     int channel = 0;
     int vmxChannel = -1;
     bool applied = false;
+    bool claimFailedLogged = false;
   };
 
   struct EncoderPin {
@@ -70,6 +72,7 @@ class HALSimVMX {
     int32_t offset = 0;
     int32_t lastRaw = 0;
     bool haveLast = false;
+    bool claimFailedLogged = false;
     std::chrono::steady_clock::time_point lastTime;
   };
 
@@ -87,6 +90,7 @@ class HALSimVMX {
   Config m_config;
   ChannelMaps& m_maps;
   bool m_imuApplied = false;
+  bool m_imuClaimFailedLogged = false;
   std::vector<DioPin> m_dio;
   std::vector<AnalogPin> m_analog;
   std::vector<EncoderPin> m_encoders;

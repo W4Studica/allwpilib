@@ -177,6 +177,31 @@ g++ -std=c++20 -shared -fPIC -O2 \
 
 ## 6. 확장이 로드되고 하드웨어를 움직이는가
 
+### 6a. 로봇에서 도구 빌드 (`tools/build_on_robot.sh`)
+
+WPILib을 빌드하지 않는다. 공개된 `linuxarm64` 라이브러리(약 42MB: hal, wpiutil, ntcore, datalog, wpinet)를 받아서 링크한다. 로봇의 allwpilib 체크아웃에서 실행:
+
+```bash
+./simulation/halsim_vmx/tools/build_on_robot.sh
+```
+
+결과(`~/halsim_vmx-build`): `libhalsim_vmx.so`(확장), `hal_dio_test`(sim HAL로 WPILib DIO를 움직이는 시험), `vmx_channels`(VMX 채널 지도 출력). 라이브러리는 `~/wpilib-libs`. 끝에 `ldd`로 `not found`를 검사한다(= §5의 로봇 쪽 확인).
+`--dry-run`으로 명령만 볼 수 있다. **로봇에서 아직 실행하지 않았다.** PC에서 스크립트와 같은 플래그로 컴파일은 확인했다.
+
+### 6b. 채널 번호는 추측하지 말고 로봇에게 물어본다
+
+```bash
+sudo ~/halsim_vmx-build/vmx_channels
+```
+FlexDIO/AnalogIn/HiCurrDIO/CommDIO별 채널 인덱스 범위와 채널마다의 기능(DigitalIn/Out, PWM, Encoder, Interrupt, SPI/I2C/UART 등)을 출력한다. 이 번호를 `HALSIMVMX_DIO_MAP`/`HALSIMVMX_ANALOG_MAP`에 쓴다(§3의 채널표도 여기서 채운다).
+
+### 6c. sim HAL로 DIO를 움직이기 (`hal_dio_test`)
+
+`HALSIMVMX_DIO_MAP="0:<N>,1:<M>"`(WPILib DIO 0 -> VMX 채널 N, DIO 1 -> VMX 채널 M). 출력 N과 입력 M을 **점퍼선으로 연결**하면 루프백으로 검사하고(`loopback OK`), 연결이 없으면 출력 핀을 멀티미터/LED로 본다. `build_on_robot.sh`가 마지막에 실행 명령을 출력한다.
+로그에 `HALSim VMX: DIO 0 -> VMX channel N (output)`가 나오면 claim 성공, `cannot claim VMX channel ...`이 나오면 실패(채널이 그 용도를 지원하지 않거나 이미 쓰는 중).
+
+### 6d. 기존 확인 항목
+
 최소 Java 로봇 프로젝트(또는 PC에서 `./gradlew deploy`한 결과)로 확인한다. 수동 실행 예(명령 미검증):
 
 ```bash

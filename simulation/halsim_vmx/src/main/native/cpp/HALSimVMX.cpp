@@ -5,6 +5,7 @@
 #include "wpi/halsim/vmx/HALSimVMX.hpp"
 
 #include <chrono>
+#include <cstdio>
 #include <utility>
 
 #include "wpi/hal/Ports.h"
@@ -186,10 +187,21 @@ void HALSimVMX::PollDio(DioPin& pin, bool ownedByEncoder) {
       if (m_backend->InitDigital(pin.vmxChannel, isInput)) {
         pin.applied = true;
         pin.appliedInput = isInput;
+        pin.claimFailedLogged = false;
+        std::printf("HALSim VMX: DIO %d -> VMX channel %d (%s)\n", pin.channel,
+                    pin.vmxChannel, isInput ? "input" : "output");
         if (!isInput) {
           m_backend->SetDigital(pin.vmxChannel, simValue);
         }
+      } else if (!pin.claimFailedLogged) {
+        pin.claimFailedLogged = true;
+        std::fprintf(stderr,
+                     "HALSim VMX: cannot claim VMX channel %d for DIO %d as %s\n",
+                     pin.vmxChannel, pin.channel, isInput ? "input" : "output");
       }
+    }
+    if (!initialized) {
+      pin.claimFailedLogged = false;
     }
     if (pin.applied && pin.appliedInput) {
       hardwareValue = m_backend->GetDigital(pin.vmxChannel);
@@ -218,6 +230,19 @@ void HALSimVMX::PollAnalog(AnalogPin& pin) {
     }
     if (!pin.applied && initialized) {
       pin.applied = m_backend->InitAnalog(pin.vmxChannel);
+      if (pin.applied) {
+        pin.claimFailedLogged = false;
+        std::printf("HALSim VMX: AnalogIn %d -> VMX channel %d\n", pin.channel,
+                    pin.vmxChannel);
+      } else if (!pin.claimFailedLogged) {
+        pin.claimFailedLogged = true;
+        std::fprintf(stderr,
+                     "HALSim VMX: cannot claim VMX channel %d for AnalogIn %d\n",
+                     pin.vmxChannel, pin.channel);
+      }
+    }
+    if (!initialized) {
+      pin.claimFailedLogged = false;
     }
     if (pin.applied) {
       publish = m_backend->GetAnalogVoltage(pin.vmxChannel, &hardwareVolts);
@@ -239,6 +264,9 @@ void HALSimVMX::PollEncoder(EncoderPin& pin) {
   const bool reverse = HALSIM_GetEncoderReverseDirection(i);
   const bool resetRequested = HALSIM_GetEncoderReset(i);
   const double distancePerPulse = HALSIM_GetEncoderDistancePerPulse(i);
+  if (!initialized) {
+    pin.claimFailedLogged = false;
+  }
 
   bool publish = false;
   int32_t count = 0;
@@ -259,8 +287,16 @@ void HALSimVMX::PollEncoder(EncoderPin& pin) {
         pin.vmxA = *vmxA;
         pin.vmxB = *vmxB;
         pin.haveLast = false;
+        pin.claimFailedLogged = false;
         int32_t raw = 0;
         pin.offset = m_backend->GetEncoderCount(pin.vmxA, &raw) ? raw : 0;
+        std::printf("HALSim VMX: Encoder %d -> VMX channels %d/%d\n", pin.index,
+                    pin.vmxA, pin.vmxB);
+      } else if (!pin.claimFailedLogged) {
+        pin.claimFailedLogged = true;
+        std::fprintf(stderr,
+                     "HALSim VMX: cannot claim VMX channels %d/%d for Encoder %d\n",
+                     *vmxA, *vmxB, pin.index);
       }
     }
     if (pin.applied) {
@@ -312,6 +348,13 @@ void HALSimVMX::PollImu() {
     std::scoped_lock lock{m_mutex};
     if (!m_imuApplied) {
       m_imuApplied = m_backend->InitImu();
+      if (m_imuApplied) {
+        m_imuClaimFailedLogged = false;
+        std::puts("HALSim VMX: IMU claimed");
+      } else if (!m_imuClaimFailedLogged) {
+        m_imuClaimFailedLogged = true;
+        std::fputs("HALSim VMX: cannot claim the IMU\n", stderr);
+      }
     }
     if (m_imuApplied) {
       valid = m_backend->GetImu(&s);
