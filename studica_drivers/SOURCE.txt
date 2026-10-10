@@ -1,0 +1,4 @@
+Copied from https://github.com/Studica-Robotics/ROS2 (drivers/)
+Source ref: main
+Source commit: f97edec (Merge pull request #56 from Studica-Robotics/titan2-PID-fix)
+License: Apache-2.0 (see LICENSE)
