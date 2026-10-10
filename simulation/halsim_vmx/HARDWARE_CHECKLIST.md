@@ -36,6 +36,11 @@ Studica 문서상 VMX 공식 이미지는 Ubuntu 22.04(glibc 2.35)이다.
 
 1. `vmxpi_hal_cpp`가 설치돼 있는지 확인한다: `ls /usr/local/include/vmxpi/VMXPi.h /usr/local/lib/vmxpi/`
    (공식 이미지에는 미리 설치돼 있다고 Studica ROS2 README에 적혀 있다. 다른 OS면 설치 방법은 Studica 문서를 확인한다.)
+
+   > **`vmxpi-hal_1.0~20240704_arm64.deb`(프로젝트 루트에 있던 비공식 재패키징, 공식 Ubuntu 22.04 ROS2 Humble 이미지에서 추출)를 읽기만 해서 확인한 것:**
+   > - 라이브러리(`/usr/local/lib/vmxpi/libvmxpi_hal_cpp.so` 등)만 들어 있고 **`VMXPi.h` 헤더는 없다.** 이 deb만으로는 `studica_drivers`/플러그인을 컴파일할 수 없다. 헤더는 공식 이미지의 `/usr/local/include/vmxpi/`에서 가져와야 한다.
+   > - `libvmxpi_hal_cpp.so`가 필요로 하는 것: 최대 `GLIBC_2.34`, `GLIBCXX_3.4.29`, 외부 라이브러리는 `libstdc++`/`libgcc_s`/`libc`뿐. 상위 호환이라 22.04보다 새로운 OS에서도 로드될 가능성이 높다(실행해 본 것은 아님).
+   > - pigpio는 별도 `.so`가 아니라 라이브러리 안에 들어 있는 것으로 보인다(`PIGPIOClient` 심볼). 동작 방식은 모른다.
 2. `studica_drivers`를 빌드/설치한다(Studica ROS2 README 방식):
    ```bash
    cd allwpilib/studica_drivers && make && sudo make install
