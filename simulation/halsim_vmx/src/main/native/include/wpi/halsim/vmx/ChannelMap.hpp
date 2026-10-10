@@ -44,4 +44,13 @@ struct ChannelMaps {
   static ChannelMaps FromEnv();
 };
 
+/// Everything halsim_vmx is told by its environment.
+struct Config {
+  ChannelMaps maps;
+  /// HALSIMVMX_IMU=1. The sim IMU has no "initialized" signal, so it is opt-in.
+  bool imu = false;
+
+  static Config FromEnv();
+};
+
 }  // namespace wpilibvmx

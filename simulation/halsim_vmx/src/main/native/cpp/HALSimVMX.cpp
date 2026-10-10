@@ -11,15 +11,20 @@
 #include "wpi/hal/simulation/AnalogInData.h"
 #include "wpi/hal/simulation/DIOData.h"
 #include "wpi/hal/simulation/EncoderData.h"
+#include "wpi/hal/simulation/IMUData.h"
 
 using namespace wpilibvmx;
 
 namespace {
 constexpr auto kPollPeriod = std::chrono::milliseconds(10);
+constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+constexpr double kGravity = 9.80665;  // m/s^2 per g
 }  // namespace
 
-HALSimVMX::HALSimVMX(std::unique_ptr<VmxBackend> backend, ChannelMaps maps)
-    : m_backend{std::move(backend)}, m_maps{std::move(maps)} {
+HALSimVMX::HALSimVMX(std::unique_ptr<VmxBackend> backend, Config config)
+    : m_backend{std::move(backend)},
+      m_config{std::move(config)},
+      m_maps{m_config.maps} {
   // Pins are fixed for the lifetime of the object: callbacks keep pointers
   // into this vector, so it must never reallocate after Start().
   int numChannels = HAL_GetNumDigitalChannels();
@@ -106,6 +111,10 @@ void HALSimVMX::Stop() {
       pin.applied = false;
     }
   }
+  if (m_imuApplied) {
+    m_backend->ReleaseImu();
+    m_imuApplied = false;
+  }
 }
 
 std::set<int> HALSimVMX::EncoderOwnedDioChannels() const {
@@ -135,6 +144,9 @@ void HALSimVMX::Poll() {
   }
   for (auto& pin : m_encoders) {
     PollEncoder(pin);
+  }
+  if (m_config.imu) {
+    PollImu();
   }
   for (auto& pin : m_analog) {
     if (pin.vmxChannel >= 0) {
@@ -291,4 +303,36 @@ void HALSimVMX::PollEncoder(EncoderPin& pin) {
   if (resetRequested) {
     HALSIM_SetEncoderReset(i, false);
   }
+}
+
+void HALSimVMX::PollImu() {
+  ImuSample s;
+  bool valid = false;
+  {
+    std::scoped_lock lock{m_mutex};
+    if (!m_imuApplied) {
+      m_imuApplied = m_backend->InitImu();
+    }
+    if (m_imuApplied) {
+      valid = m_backend->GetImu(&s);
+    }
+  }
+  if (!valid) {
+    return;
+  }
+
+  // Unit and sign conversion (navX -> WPILib IMU HAL). ASSUMPTIONS, unverified
+  // on hardware: navX yaw and Z rate are positive clockwise while WPILib is
+  // positive counterclockwise, so they are negated; roll, pitch, X/Y rates and
+  // acceleration are passed through unchanged.
+  HALSIM_SetIMUYaw(-s.yawDeg * kDegToRad);
+  HALSIM_SetIMUAngleX(s.rollDeg * kDegToRad);
+  HALSIM_SetIMUAngleY(s.pitchDeg * kDegToRad);
+  HALSIM_SetIMUAngleZ(-s.yawDeg * kDegToRad);
+  HALSIM_SetIMUGyroRateX(s.gyroXDps * kDegToRad);
+  HALSIM_SetIMUGyroRateY(s.gyroYDps * kDegToRad);
+  HALSIM_SetIMUGyroRateZ(-s.gyroZDps * kDegToRad);
+  HALSIM_SetIMUAccelX(s.accelXG * kGravity);
+  HALSIM_SetIMUAccelY(s.accelYG * kGravity);
+  HALSIM_SetIMUAccelZ(s.accelZG * kGravity);
 }

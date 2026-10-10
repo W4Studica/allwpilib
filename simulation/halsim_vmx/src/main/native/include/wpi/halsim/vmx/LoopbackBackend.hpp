@@ -29,6 +29,9 @@ class LoopbackBackend : public VmxBackend {
   bool InitEncoder(int vmxChannelA, int vmxChannelB) override;
   void ReleaseEncoder(int vmxChannelA) override;
   bool GetEncoderCount(int vmxChannelA, int32_t* count) override;
+  bool InitImu() override;
+  void ReleaseImu() override;
+  bool GetImu(ImuSample* sample) override;
 
   /// Test hooks.
   bool IsClaimed(int vmxChannel);
@@ -39,6 +42,9 @@ class LoopbackBackend : public VmxBackend {
   void DriveAnalog(int vmxChannel, double volts);
   bool IsEncoderClaimed(int vmxChannelA);
   void DriveEncoder(int vmxChannelA, int32_t count);
+  bool IsImuClaimed();
+  /// Sets the IMU reading; connected=false makes GetImu() fail.
+  void DriveImu(const ImuSample& sample, bool connected = true);
 
  private:
   std::mutex m_mutex;
@@ -50,6 +56,10 @@ class LoopbackBackend : public VmxBackend {
     int32_t count = 0;
   };
   std::map<int, Enc> m_encoders;
+
+  bool m_imuClaimed = false;
+  bool m_imuConnected = true;
+  ImuSample m_imu;
 
   // Mirrors the assumption that a VMX channel can serve only one function.
   // Caller holds m_mutex.

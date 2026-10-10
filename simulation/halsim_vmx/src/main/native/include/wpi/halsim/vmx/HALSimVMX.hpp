@@ -20,7 +20,8 @@
 namespace wpilibvmx {
 
 /**
- * Connects the simulation HAL to VMX hardware. Currently digital I/O, analog inputs and quadrature encoders.
+ * Connects the simulation HAL to VMX hardware. Currently digital I/O, analog inputs, quadrature
+ * encoders and the IMU.
  *
  * Pin state (initialized, direction) is reconciled by a polling thread because
  * the sim HAL sets "initialized" before it sets the direction, so the mode
@@ -29,7 +30,7 @@ namespace wpilibvmx {
  */
 class HALSimVMX {
  public:
-  HALSimVMX(std::unique_ptr<VmxBackend> backend, ChannelMaps maps);
+  HALSimVMX(std::unique_ptr<VmxBackend> backend, Config config);
   ~HALSimVMX();
   HALSimVMX(const HALSimVMX&) = delete;
   HALSimVMX& operator=(const HALSimVMX&) = delete;
@@ -77,12 +78,15 @@ class HALSimVMX {
   void PollDio(DioPin& pin, bool ownedByEncoder);
   void PollAnalog(AnalogPin& pin);
   void PollEncoder(EncoderPin& pin);
+  void PollImu();
 
   /// WPILib DIO channels used as encoder A/B by encoders that are mapped.
   std::set<int> EncoderOwnedDioChannels() const;
 
   std::unique_ptr<VmxBackend> m_backend;
-  ChannelMaps m_maps;
+  Config m_config;
+  ChannelMaps& m_maps;
+  bool m_imuApplied = false;
   std::vector<DioPin> m_dio;
   std::vector<AnalogPin> m_analog;
   std::vector<EncoderPin> m_encoders;

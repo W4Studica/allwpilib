@@ -12,6 +12,7 @@
 #include "analog_input.hpp"
 #include "dio.hpp"
 #include "encoder.hpp"
+#include "imu.hpp"
 #include "wpi/halsim/vmx/VmxBackend.hpp"
 
 namespace wpilibvmx {
@@ -102,11 +103,39 @@ class StudicaBackend : public VmxBackend {
     return true;
   }
 
+ bool InitImu() override {
+    if (!m_vmx || !m_vmx->IsOpen() || m_imu) {
+      return false;
+    }
+    // Use the constructor that takes our VMXPi: Imu() would create another.
+    m_imu = std::make_unique<studica_driver::Imu>(m_vmx);
+    return true;
+  }
+
+  void ReleaseImu() override { m_imu.reset(); }
+
+  bool GetImu(ImuSample* sample) override {
+    if (!m_imu || !m_imu->IsConnected() || m_imu->IsCalibrating()) {
+      return false;
+    }
+    sample->yawDeg = m_imu->GetYaw();
+    sample->pitchDeg = m_imu->GetPitch();
+    sample->rollDeg = m_imu->GetRoll();
+    sample->gyroXDps = m_imu->GetRawGyroX();
+    sample->gyroYDps = m_imu->GetRawGyroY();
+    sample->gyroZDps = m_imu->GetRawGyroZ();
+    sample->accelXG = m_imu->GetRawAccelX();
+    sample->accelYG = m_imu->GetRawAccelY();
+    sample->accelZG = m_imu->GetRawAccelZ();
+    return true;
+  }
+
  private:
   std::shared_ptr<VMXPi> m_vmx;
   std::map<int, std::unique_ptr<studica_driver::DIO>> m_dio;
   std::map<int, std::unique_ptr<studica_driver::AnalogInput>> m_analog;
   std::map<int, std::unique_ptr<studica_driver::Encoder>> m_encoders;
+  std::unique_ptr<studica_driver::Imu> m_imu;
 };
 
 }  // namespace

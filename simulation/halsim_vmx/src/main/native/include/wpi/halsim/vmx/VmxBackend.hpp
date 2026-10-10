@@ -17,6 +17,19 @@ namespace wpilibvmx {
  *
  * All channel numbers here are VMX channel indexes, not WPILib channel numbers.
  */
+/// One IMU reading in the sensor's native units (navX: degrees, deg/s, g).
+struct ImuSample {
+  double yawDeg = 0;
+  double pitchDeg = 0;
+  double rollDeg = 0;
+  double gyroXDps = 0;
+  double gyroYDps = 0;
+  double gyroZDps = 0;
+  double accelXG = 0;
+  double accelYG = 0;
+  double accelZG = 0;
+};
+
 class VmxBackend {
  public:
   virtual ~VmxBackend() = default;
@@ -38,6 +51,12 @@ class VmxBackend {
   virtual void ReleaseEncoder(int vmxChannelA) = 0;
   /// Reads the raw tick count since the encoder was claimed.
   virtual bool GetEncoderCount(int vmxChannelA, int32_t* count) = 0;
+
+  /// Claims the IMU (navX). There is only one.
+  virtual bool InitImu() = 0;
+  virtual void ReleaseImu() = 0;
+  /// Reads the IMU. Returns false while it is disconnected or calibrating.
+  virtual bool GetImu(ImuSample* sample) = 0;
 };
 
 /// Creates the backend selected at build time.

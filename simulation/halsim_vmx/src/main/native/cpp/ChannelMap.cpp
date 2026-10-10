@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cstdlib>
 #include <string_view>
+#include <cstring>
 
 using namespace wpilibvmx;
 
@@ -61,4 +62,12 @@ std::optional<int> ChannelMap::Get(int wpilibChannel) const {
 ChannelMaps ChannelMaps::FromEnv() {
   return {ChannelMap::FromEnv("HALSIMVMX_DIO_MAP"),
           ChannelMap::FromEnv("HALSIMVMX_ANALOG_MAP")};
+}
+
+Config Config::FromEnv() {
+  Config config;
+  config.maps = ChannelMaps::FromEnv();
+  const char* imu = std::getenv("HALSIMVMX_IMU");
+  config.imu = imu != nullptr && std::strcmp(imu, "1") == 0;
+  return config;
 }

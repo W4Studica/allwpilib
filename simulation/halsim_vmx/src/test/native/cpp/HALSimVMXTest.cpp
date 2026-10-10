@@ -4,14 +4,17 @@
 
 #include "wpi/halsim/vmx/HALSimVMX.hpp"
 
+#include <cmath>
 #include <memory>
 #include <utility>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "wpi/hal/AnalogInput.h"
 #include "wpi/hal/DIO.h"
 #include "wpi/hal/Encoder.h"
+#include "wpi/hal/IMU.h"
 #include "wpi/hal/simulation/AnalogInData.h"
 #include "wpi/hal/simulation/DIOData.h"
 #include "wpi/hal/simulation/EncoderData.h"
@@ -34,7 +37,7 @@ constexpr int kVmxEncA = 40;
 constexpr int kVmxEncB = 41;
 
 struct Fixture {
-  Fixture() {
+  explicit Fixture(bool imuEnabled = false) {
     HALSIM_ResetDIOData(kDio);
     HALSIM_ResetAnalogInData(kAnalog);
     HALSIM_ResetEncoderData(0);
@@ -42,10 +45,11 @@ struct Fixture {
     HALSIM_ResetDIOData(kEncB);
     auto backend = std::make_unique<LoopbackBackend>();
     hw = backend.get();
-    ChannelMaps maps;
-    maps.dio = ChannelMap::Parse("2:20,4:40,5:41");
-    maps.analog = ChannelMap::Parse("1:30");
-    sim = std::make_unique<HALSimVMX>(std::move(backend), std::move(maps));
+    Config config;
+    config.maps.dio = ChannelMap::Parse("2:20,4:40,5:41");
+    config.maps.analog = ChannelMap::Parse("1:30");
+    config.imu = imuEnabled;
+    sim = std::make_unique<HALSimVMX>(std::move(backend), std::move(config));
     sim->Start(false);
   }
   ~Fixture() {
@@ -336,4 +340,70 @@ TEST_CASE("Stopping releases encoders", "[halsim_vmx]") {
   REQUIRE_FALSE(f.hw->IsEncoderClaimed(kVmxEncA));
 
   FreeEncoder(h);
+}
+
+TEST_CASE("IMU is not claimed unless enabled", "[halsim_vmx]") {
+  Fixture f;
+  f.sim->Poll();
+  REQUIRE_FALSE(f.hw->IsImuClaimed());
+}
+
+TEST_CASE("IMU converts navX units and signs to the WPILib IMU HAL",
+          "[halsim_vmx]") {
+  Fixture f{true};
+  ImuSample sample;
+  sample.yawDeg = 90;
+  sample.pitchDeg = 10;
+  sample.rollDeg = -20;
+  sample.gyroXDps = 180;
+  sample.gyroYDps = 0;
+  sample.gyroZDps = 90;
+  sample.accelXG = 0.5;
+  sample.accelYG = 0;
+  sample.accelZG = 1;
+  f.sim->Poll();  // claims the IMU
+  REQUIRE(f.hw->IsImuClaimed());
+  f.hw->DriveImu(sample);
+  f.sim->Poll();
+
+  constexpr double kPi = 3.14159265358979323846;
+  int64_t timestamp = 0;
+  REQUIRE(HAL_GetIMUYawFlat(&timestamp) == Catch::Approx(-kPi / 2));
+
+  int32_t status = 0;
+  HAL_EulerAngles3d angles;
+  HAL_GetIMUEulerAnglesFlat(&angles, &status);
+  REQUIRE(angles.x == Catch::Approx(-20 * kPi / 180));
+  REQUIRE(angles.y == Catch::Approx(10 * kPi / 180));
+  REQUIRE(angles.z == Catch::Approx(-kPi / 2));
+
+  HAL_GyroRate3d rates;
+  HAL_GetIMUGyroRates(&rates, &status);
+  REQUIRE(rates.x == Catch::Approx(kPi));
+  REQUIRE(rates.z == Catch::Approx(-kPi / 2));
+
+  HAL_Acceleration3d accel;
+  HAL_GetIMUAcceleration(&accel, &status);
+  REQUIRE(accel.x == Catch::Approx(0.5 * 9.80665));
+  REQUIRE(accel.z == Catch::Approx(9.80665));
+}
+
+TEST_CASE("IMU values are not published while disconnected", "[halsim_vmx]") {
+  Fixture f{true};
+  f.sim->Poll();
+  ImuSample sample;
+  sample.yawDeg = 45;
+  f.hw->DriveImu(sample, false);
+  f.sim->Poll();
+
+  int64_t timestamp = 0;
+  REQUIRE(HAL_GetIMUYawFlat(&timestamp) != Catch::Approx(-45 * 3.14159265 / 180));
+}
+
+TEST_CASE("Stopping releases the IMU", "[halsim_vmx]") {
+  Fixture f{true};
+  f.sim->Poll();
+  REQUIRE(f.hw->IsImuClaimed());
+  f.sim->Stop();
+  REQUIRE_FALSE(f.hw->IsImuClaimed());
 }

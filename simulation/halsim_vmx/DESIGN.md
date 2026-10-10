@@ -31,9 +31,9 @@
 | `DigitalInput` | `DIO` `Initialized`, `IsInput=true`, `Value` | HW→sim | `DIO(ch, PinMode::INPUT)`, `Get()` | 인터럽트는 `EnableInterrupt()`로 대응 가능 |
 | `AnalogInput` | `AnalogIn` `Initialized`, `Voltage` | HW→sim | `AnalogInput(port)`, `GetAverageVoltage(float&)` | 반환이 bool+out 인자 |
 | `Encoder` | `Encoder` `Initialized`, `DigitalChannelA/B`, `Count`, `Reset`, `ReverseDirection` | HW→sim | `Encoder(port_a, port_b)`, `GetCount()` | `Reset`/`DistancePerPulse`는 래퍼에서 처리(Studica Encoder에 reset 없음) |
-| `PWM`/`Servo` | `PWM` `Initialized`, `PulseMicrosecond`, `OutputPeriod` | sim→HW | `PWM`/`Servo(port, type)`, `SetAngle()`/`SetSpeed()` | Studica는 -150~150 정수 범위 사용. us→범위 변환 필요, `SetBounds()`로 맞춤 |
-| `DutyCycleEncoder` | `DutyCycle` `Initialized`, `Frequency`, `Output` | HW→sim | `DutyCycleEncoder(port)`, `GetAbsolutePosition()` | |
-| IMU/Gyro | `IMU` `Yaw`, `AngleX/Y/Z`, `GyroRateX/Y/Z`, `AccelX/Y/Z` | HW→sim | `Imu`(navX): `GetYaw/Pitch/Roll`, `GetRate`, `GetWorldLinearAccelX/Y/Z`, `GetRawGyroX..` | 단위/부호/좌표계 변환 확인 필요 |
+| `PWM`/`Servo` | `PWM` `Initialized`, `PulseMicrosecond`, `OutputPeriod` | sim→HW | (보류) | **보류.** Studica `PWM`에는 값을 쓰는 공개 함수가 없고(`Servo::SetAngle/SetSpeed`만 출력), 정수 범위→duty tick 변환이라 마이크로초 펄스폭과 맞지 않음. `studica_drivers`를 수정할 수 없으므로 사용자는 Studica `Servo`를 직접 사용. `SetAngle`은 호출마다 `printf`함 |
+| `DutyCycleEncoder` | `DutyCycle` `Initialized`, `Frequency`, `Output` | HW→sim | (보류) | **보류.** Studica 쪽은 12비트(4095) 절대 엔코더용 VMX 캡처로 **도(degree) 값만** 반환하고 원시 duty/주파수를 노출하지 않음. 되돌려 계산하려면 센서 프로토콜을 가정해야 해서 조용히 틀린 값이 나올 위험 |
+| IMU (`OnboardIMU` 계열) | `IMU` `Yaw`, `AngleX/Y/Z`, `GyroRateX/Y/Z`, `AccelX/Y/Z` (setter만 있고 전역 1개, "초기화됨" 신호 없음) | HW→sim | `Imu`(navX): `GetYaw/Pitch/Roll`, `GetRawGyroX/Y/Z`, `GetRawAccelX/Y/Z`, `IsConnected`, `IsCalibrating` | **구현됨.** 신호가 없어서 `HALSIMVMX_IMU=1`로 명시적으로 켬. 변환(**하드웨어 미검증 가정**): 도→라디안, deg/s→rad/s, g→m/s². navX yaw와 Z축 각속도는 시계 방향이 양수이고 WPILib은 반시계 방향이 양수라서 **부호를 뒤집음**. roll/pitch/X·Y 각속도/가속도는 그대로 전달. 연결 안 됨/보정 중이면 값을 갱신하지 않음. 쿼터니언은 sim HAL에 setter가 없어 미지원 |
 | `I2C` | `I2C` (read/write 콜백) | 양방향 | `I2C(vmx)`, `WriteI2C/ReadI2C/i2cTransaction` | |
 | `DriverStation` | `DriverStation` `Enabled`, `RobotMode`, `OpMode`, `EStop`, `DsAttached`, `Joystick*` | → robot_manager | (하드웨어 클래스 없음) | MockDS. §2 |
 
@@ -61,7 +61,7 @@
 | 방안 | 내용 | 비고 |
 |---|---|---|
 | **S1 (시작점)** | 사용자 코드가 `DriverStation::IsEnabled()`로 `titan.Enable(...)`을 호출. 헬퍼 제공 | Studica 클래스 수정 없음. 사용자가 빼먹을 수 있음 |
-| **S4 (권장)** | `halsim_vmx` 안에 워치독 스레드: sim `DriverStation.Enabled` 구독 → disabled/종료(`HAL_OnShutdown`)/시그널 시 Titan에 `Enable(false)` 전송. Titan 등록은 `studica_drivers` 객체 생성자 훅이 필요 → §3의 VMX 공유 패치와 함께 처리 | studica_control의 titan 컴포넌트도 이 방식(타이머로 50 Hz 재전송, 유일한 하드웨어 경로) |
+| **S4 (권장)** | **우리 쪽** 헬퍼(향후 `vmxVendordep`, `studica_drivers` 밖)가 `Titan`을 감싸 `DriverStation` enable에 맞춰 `Enable()`을 호출하고 종료/disabled 때 `Enable(false)`, 제어 중에는 50 Hz 재전송. 헬퍼를 안 쓰고 S1처럼 직접 호출해도 됨 | studica_control의 titan 컴포넌트도 타이머로 50 Hz 재전송. `studica_drivers`를 고치지 않으므로 Titan 객체 생성에 훅을 걸 수 없음 |
 | 하드웨어 안전망 | 프로세스가 죽어도 Titan이 **200 ms 후 스스로 정지**(`titan.hpp` 주석, ROS2 README의 "CAN Watchdog") | 소프트웨어 버그에 대비한 마지막 방어선 |
 
 MockDS 자체는 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop`)를 채우는 것. **robot_manager가 로봇 프로그램에 enable/모드를 전달하는 IPC**가 필요하다(소켓/파일 등). 대회 진행 신호를 받는 방법(네트워크/GPIO/파일)은 **미정**.
@@ -75,7 +75,7 @@ MockDS 자체는 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop
 - **실행은 root(sudo)로 해야 한다.** deploy 스크립트와 `robot_manager` 서비스가 root로 로봇 프로그램을 띄워야 함.
 - **VMXPi는 프로세스 안에서 하나를 만들어 공유하는 것이 검증된 패턴이다.** `studica_control`은 `manual_composition.cpp`에서 `VMXPi(true, 50)`를 **한 번만** 만들어 모든 컴포넌트에 `shared_ptr`로 넘긴다.
 - **Studica 클래스 생성자의 기본 인자는 함정이다.** `Titan(...)`, `Servo(...)`, `Encoder(...)`, `DIO(...)` 등 대부분이 `vmx = std::make_shared<VMXPi>(true, 50)`가 기본값이고, `Imu()`는 아예 새로 만든다. 사용자가 인자 없이 Studica 클래스를 쓰면 **VMXPi가 장치 수만큼 생긴다.**
-  - "Studica 함수를 그대로 쓴다"를 지키려면 `studica_drivers`의 이 기본 인자를 **공유 인스턴스를 돌려주는 함수**(`studica_driver::SharedVMX()`)로 바꾸는 작은 패치가 필요하다(헤더 약 12개, 한 줄씩). 복사본이라 수동 갱신하는 정책과 맞지만, **패치한 줄은 `SOURCE.txt`에 목록으로 남길 것.**
+  - **`studica_drivers`는 수정하지 않는다(규칙).** 그래서 기본 인자를 바꿀 수 없다. 대신 `halsim_vmx`가 `wpilibvmx::SharedVMX()`로 프로세스 공유 인스턴스를 노출하고, **사용자는 Studica 객체를 만들 때 이 인스턴스를 인자로 넘기는 것을 규칙으로 안내**한다. 인자를 빼먹으면 `VMXPi`가 하나 더 생기는 함정이 남는다(하드웨어에서 실제로 문제인지부터 확인).
   - 대안: 문서로 "항상 `halsim_vmx`가 주는 VMX를 넘겨라"라고 안내(사용자 실수 위험).
 - **Titan 워치독**: 장치가 약 150~200 ms 명령이 없으면 안전 상태로 들어가고, ROS2 드라이버는 4개 모터 속도(0 포함)를 **50 Hz로 계속 재전송**해서 "정지"를 유지한다. halsim_vmx도 같은 방식이어야 한다.
 - `examples/!watchdog_example/`에는 **`Makefile`만 있고 소스가 없다**(이름의 `!`는 제외/미완 표시로 보임). 참고 자료 없음.
@@ -83,7 +83,7 @@ MockDS 자체는 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop
 
 ### 아직 모르는 것 (하드웨어 확인)
 
-1. **한 프로세스 안에서** `VMXPi` 인스턴스를 여러 개 만들면 실제로 실패하는가? (위 `SharedVMX()` 패치의 필요성 확인. 이것이 핵심 확인 항목)
+1. **한 프로세스 안에서** `VMXPi` 인스턴스를 여러 개 만들면 실제로 실패하는가? (실패하면 기본 인자 함정이 실제 위험이 되고, 안 하면 큰 문제 아님. 이것이 핵심 확인 항목)
 2. **채널 번호 체계**: WPILib DIO/Analog/PWM 번호 ↔ `VMXChannelIndex` 대응표(§4)는 VMX-pi 핀맵 확인 후 작성. VMX HAL 헤더(`VMXPi.h`, `/usr/local/include/vmxpi`)가 필요한데 GitHub에는 없고 VMX OS 이미지에 설치되어 있음(README: `learn.studica.com/docs/ws/vmx/os-images`).
 4. **스레딩**: `DIO` 인터럽트 콜백은 VMX 백그라운드 스레드에서 실행됨. sim HAL 갱신은 스레드 안전하게 해야 함.
 5. **Java 지원**: `studica_drivers`는 C++ 전용. Java 사용자는 JNI 래퍼가 필요 → **1차 목표는 C++만**으로 한정 권장.
@@ -108,8 +108,8 @@ MockDS 자체는 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop
 ## 6. 구현 순서 제안
 
 1. **하드웨어 확인**(§3 "아직 모르는 것" 1번)과 VMX HAL 헤더 확보 → §4 채널표 작성.
-2. `halsim_vmx` 골격: `HALSIM_InitExtension`에서 **VMXPi 하나를 만들어 소유**하고 `SharedVMX()`로 노출. 워치독(S4)과 `DriverStation` 구독.
+2. `halsim_vmx` 골격: `HALSIM_InitExtension`에서 **VMXPi 하나를 만들어 소유**하고 `SharedVMX()`로 노출. DriverStation 구독.
 3. 표준 클래스 연결을 쉬운 것부터: DIO → AnalogIn → Encoder → PWM/Servo → DutyCycle → IMU → I2C.
-4. `studica_drivers` 기본 인자 패치(`SharedVMX()`)와 패치 목록 기록.
+4. (삭제됨) `studica_drivers`는 수정하지 않는다.
 5. `robot_manager` 최소 버전: root로 로봇 프로그램 실행/재시작 + MockDS 전달(IPC).
 6. 우리 GradleRIO에 VMX deploy 타깃(Studica-Robotics/GradleRIO 참고).

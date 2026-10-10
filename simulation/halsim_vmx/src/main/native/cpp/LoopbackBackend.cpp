@@ -131,3 +131,37 @@ void LoopbackBackend::DriveEncoder(int vmxChannelA, int32_t count) {
     it->second.count = count;
   }
 }
+
+bool LoopbackBackend::InitImu() {
+  std::scoped_lock lock{m_mutex};
+  if (m_imuClaimed) {
+    return false;
+  }
+  m_imuClaimed = true;
+  return true;
+}
+
+void LoopbackBackend::ReleaseImu() {
+  std::scoped_lock lock{m_mutex};
+  m_imuClaimed = false;
+}
+
+bool LoopbackBackend::GetImu(ImuSample* sample) {
+  std::scoped_lock lock{m_mutex};
+  if (!m_imuClaimed || !m_imuConnected) {
+    return false;
+  }
+  *sample = m_imu;
+  return true;
+}
+
+bool LoopbackBackend::IsImuClaimed() {
+  std::scoped_lock lock{m_mutex};
+  return m_imuClaimed;
+}
+
+void LoopbackBackend::DriveImu(const ImuSample& sample, bool connected) {
+  std::scoped_lock lock{m_mutex};
+  m_imu = sample;
+  m_imuConnected = connected;
+}
