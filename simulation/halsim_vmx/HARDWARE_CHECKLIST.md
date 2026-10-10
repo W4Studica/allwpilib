@@ -28,8 +28,13 @@ python3 --version
 - [ ] OS, 커널, Pi 모델, glibc, g++, java, python을 기록했다.
 
 **이미 확인된 값(2026-10-10, 개발용 VMX 한 대, SSH 로그인 출력에서):** Ubuntu 26.04.1 LTS, 커널 `7.0.0-1020-raspi`(aarch64),
-glibc 2.43, OpenJDK 25.0.4.1(`openjdk-25-jre-headless`), `vmxpi-hal_1.0~20240704` 설치 성공. Pi 모델, g++, python3, `VMXPi.h` 유무는 아직 모름.
+glibc 2.43, OpenJDK 25.0.4.1(`openjdk-25-jre-headless`), `vmxpi-hal_1.0~20240704` 설치 성공.
+같은 로봇에서 추가로 확인됨: **Raspberry Pi 4 Model B Rev 1.5**, Python 3.14.4, **g++ 없음**, **`/usr/local/include/vmxpi` 없음(헤더 없음)**,
+`libvmxpi_hal_cpp.so`의 의존 라이브러리(`libstdc++`, `libgcc_s`, `libc`, `libm`, `ld-linux`)가 **모두 해석됨**(`ldd`에 `not found` 없음).
+디바이스: `/dev/mem`(root:kmem 0640), `/dev/gpiomem`(root 0600), `/dev/i2c-1`(dialout), `/dev/spidev0.0`/`0.1`(dialout) 존재.
+커널 설정: `CONFIG_DEVMEM=y`, `CONFIG_STRICT_DEVMEM=y`, `IO_STRICT_DEVMEM` 꺼짐 — 주변장치 레지스터 접근은 막히지 않을 가능성이 있으나 **실행해서 확인해야 한다**(root로 실행).
 커널이 6.6보다 훨씬 새로워서, 핀 번호 오프셋(§3)이 실제로 생길 가능성이 있다.
+**g++가 없으므로 §4(플러그인 빌드) 전에 `sudo apt install -y g++ make`가 필요하다. `VMXPi.h`는 여전히 구해야 한다.**
 
 참고(이 PC에서 확인한 사실): WPILib 2027의 arm64 툴체인은 `aarch64-trixie-linux-gnu`(Debian 13, GCC 14.3, glibc 2.41)뿐이다.
 Studica 문서상 VMX 공식 이미지는 Ubuntu 22.04(glibc 2.35)이다.
