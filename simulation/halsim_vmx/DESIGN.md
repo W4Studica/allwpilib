@@ -34,7 +34,7 @@
 | `PWM`/`Servo` | `PWM` `Initialized`, `PulseMicrosecond`, `OutputPeriod` | sim→HW | (보류) | **보류.** Studica `PWM`에는 값을 쓰는 공개 함수가 없고(`Servo::SetAngle/SetSpeed`만 출력), 정수 범위→duty tick 변환이라 마이크로초 펄스폭과 맞지 않음. `studica_drivers`를 수정할 수 없으므로 사용자는 Studica `Servo`를 직접 사용. `SetAngle`은 호출마다 `printf`함 |
 | `DutyCycleEncoder` | `DutyCycle` `Initialized`, `Frequency`, `Output` | HW→sim | (보류) | **보류.** Studica 쪽은 12비트(4095) 절대 엔코더용 VMX 캡처로 **도(degree) 값만** 반환하고 원시 duty/주파수를 노출하지 않음. 되돌려 계산하려면 센서 프로토콜을 가정해야 해서 조용히 틀린 값이 나올 위험 |
 | IMU (`OnboardIMU` 계열) | `IMU` `Yaw`, `AngleX/Y/Z`, `GyroRateX/Y/Z`, `AccelX/Y/Z` (setter만 있고 전역 1개, "초기화됨" 신호 없음) | HW→sim | `Imu`(navX): `GetYaw/Pitch/Roll`, `GetRawGyroX/Y/Z`, `GetRawAccelX/Y/Z`, `IsConnected`, `IsCalibrating` | **구현됨.** 신호가 없어서 `HALSIMVMX_IMU=1`로 명시적으로 켬. 변환(**하드웨어 미검증 가정**): 도→라디안, deg/s→rad/s, g→m/s². navX yaw와 Z축 각속도는 시계 방향이 양수이고 WPILib은 반시계 방향이 양수라서 **부호를 뒤집음**. roll/pitch/X·Y 각속도/가속도는 그대로 전달. 연결 안 됨/보정 중이면 값을 갱신하지 않음. 쿼터니언은 sim HAL에 setter가 없어 미지원 |
-| `I2C` | `I2C` (read/write 콜백) | 양방향 | `I2C(vmx)`, `WriteI2C/ReadI2C/i2cTransaction` | |
+| `I2C` | `I2C` `Initialized`, Read/Write **버퍼 콜백** | 양방향 | (보류) | **보류.** sim HAL이 `deviceAddress`를 콜백에 넘기지 않음(`hal/src/main/native/sim/mockdata/I2CData.cpp`: 주소는 받지만 `write(buf, size)`/`read(buf, count)`만 호출). 그래서 어떤 장치로 가는 요청인지 알 수 없고, `transaction`도 쓰기 콜백 뒤에 읽기 콜백이 따로 호출돼 repeated-start 쌍을 알 수 없음. 주소를 넘기려면 allwpilib 본체 수정이 필요해 merge 방침에 어긋남. 우회(주소를 환경변수로 하나만 고정)는 다중 장치 버스에서 쓸 수 없음. Studica I2C 장치(`Cobra` 등)는 Studica API로 직접 사용 |
 | `DriverStation` | `DriverStation` `Enabled`, `RobotMode`, `OpMode`, `EStop`, `DsAttached`, `Joystick*` | → robot_manager | (하드웨어 클래스 없음) | MockDS. §2 |
 
 ### Studica에만 있고 WPILib 표준 대응이 없는 장치
