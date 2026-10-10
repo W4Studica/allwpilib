@@ -103,13 +103,32 @@ Studica 백엔드(`libhalsim_vmx_studica.so`)는 VMX 위에서 한 번만 빌드
 5. **Java 지원**: `studica_drivers`는 C++ 전용. Java 사용자는 JNI 래퍼가 필요 → **1차 목표는 C++만**으로 한정 권장.
 6. **Python(RobotPy)**: `allwpilib/drivers`처럼 semiwrap 바인딩 대상이 될 수 있으나 후순위.
 
-## 4. 채널 번호 표 (TODO)
+## 4. 채널 번호 표
 
-| WPILib 번호 | 종류 | `VMXChannelIndex` | 근거 |
-|---|---|---|---|
-| (미작성) | DIO/Analog/PWM/Encoder | | VMX-pi 핀맵 문서 확인 필요 |
+### VMX 쪽 채널 지도 (**측정됨**: 로봇의 `tools/vmx_channels`, 2026-10-10, VMX 보드 모델 0x32, 하드웨어 rev 60, 펌웨어 3.0.436)
 
-> OS/커널 버전에 따라 번호 오프셋이 필요할 수 있다는 정황이 있음(미검증, 값 모름). 이 차이는 `robot_manager`가 플랫폼 프로필로 정해서 `HALSIMVMX_*_MAP` 환경변수로 넘긴다. `halsim_vmx`에는 오프셋 옵션을 넣지 않았다. 자세한 내용은 `robot_manager/README.md`.
+`VMXChannelIndex` 기준. 보드에 인쇄된 핀 번호와 같은지는 **아직 확인 안 함**(점퍼선으로 확인 필요).
+
+| 종류 | 채널 | 기능 |
+|---|---|---|
+| FlexDIO | 0 - 11 (12개) | DigitalIn/Out, PWM 생성(PWMGen/PWMGen2), PWM 캡처, 인터럽트. **엔코더 A/B 쌍: (0,1) (2,3) (4,5) (6,7) (8,9)** (짝수=EncA, 홀수=EncB). 10, 11은 엔코더 기능 없음 |
+| HiCurrDIO | 12 - 21 (10개) | **DigitalOut, PWMGen만**(입력 불가). 방향은 점퍼 설정이라 이 로봇에서는 출력 |
+| AnalogIn | 22 - 25 (4개) | 아날로그 입력(누산기, 아날로그 트리거, 인터럽트) |
+| CommDIO | 26 - 33 (8개) | 26/27: DigitalIn/Out + PWMGen + 인터럽트 + I2C SDA/SCL. 28 UART_TX(출력), 29 UART_RX(입력), 30 SPI_CLK, 31 SPI_MOSI(+LEDArray), 32 SPI_MISO(입력), 33 SPI_CS |
+
+### WPILib 번호 -> VMX 채널 (`HALSIMVMX_*_MAP`로 정한다. 코드에 박지 않는다)
+
+매핑은 팀이 배선에 맞춰 정한다. 가능한 채널은 위 표가 정한다.
+
+| WPILib 종류 | 쓸 수 있는 VMX 채널 | 비고 |
+|---|---|---|
+| DigitalInput | FlexDIO 0-11, CommDIO 26/27/29/32 | HiCurrDIO는 입력 불가 |
+| DigitalOutput | FlexDIO 0-11, HiCurrDIO 12-21, CommDIO 26/27/28/30/31/33 | |
+| AnalogInput | AnalogIn 22-25 (WPILib 0-3 -> 22-25가 자연스러움) | |
+| Encoder(a, b) | FlexDIO 쌍 (0,1) (2,3) (4,5) (6,7) (8,9), **A=짝수 B=홀수** | 다른 조합은 하드웨어가 지원하지 않을 수 있음(미확인). WPILib `Encoder`가 같은 채널에 만드는 `DigitalInput`은 엔코더가 가져간다 |
+| 사용하지 말 것 | CommDIO 26-33 중 I2C/UART/SPI로 쓰는 채널 | navX/Titan 등이 SPI/CAN으로 연결돼 있을 수 있음(미확인) |
+
+> **핀 읽기/쓰기에 번호 오프셋이 필요한지는 아직 모른다.** 이 커널(7.0)에서는 sysfs GPIO가 없어 인터럽트만 영향이 있고(`gpio_isr_shim`로 해결), 채널 번호는 HAL의 `VMXChannelIndex`라서 오프셋 문제와는 별개로 보인다. 필요하면 `robot_manager`가 플랫폼 프로필로 `HALSIMVMX_*_MAP`을 정해서 넘긴다. `robot_manager/README.md` 참고.
 
 ## 5. XRP 구현에서 가져올 패턴 (경로 B를 만들 때)
 

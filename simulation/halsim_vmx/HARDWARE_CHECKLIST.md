@@ -186,7 +186,8 @@ WPILib을 빌드하지 않는다. 공개된 `linuxarm64` 라이브러리(약 42M
 ```
 
 결과(`~/halsim_vmx-build`): `libhalsim_vmx.so`(확장), `hal_dio_test`(sim HAL로 WPILib DIO를 움직이는 시험), `vmx_channels`(VMX 채널 지도 출력). 라이브러리는 `~/wpilib-libs`. 끝에 `ldd`로 `not found`를 검사한다(= §5의 로봇 쪽 확인).
-`--dry-run`으로 명령만 볼 수 있다. **로봇에서 아직 실행하지 않았다.** PC에서 스크립트와 같은 플래그로 컴파일은 확인했다.
+`--dry-run`으로 명령만 볼 수 있다.
+**로봇 실행 결과(2026-10-10):** `libhalsim_vmx.so`, `hal_dio_test`, `vmx_channels` 모두 오류 없이 컴파일(g++ 15.2.0), 끝의 `ldd` 검사에 `not found` 없음(공개 `linuxarm64` WPILib 라이브러리가 이 로봇에서 해석됨), `vmx_channels`가 채널 지도를 출력(결과는 `DESIGN.md` §4).
 
 ### 6b. 채널 번호는 추측하지 말고 로봇에게 물어본다
 
