@@ -201,6 +201,15 @@ FlexDIO/AnalogIn/HiCurrDIO/CommDIO별 채널 인덱스 범위와 채널마다의
 `HALSIMVMX_DIO_MAP="0:<N>,1:<M>"`(WPILib DIO 0 -> VMX 채널 N, DIO 1 -> VMX 채널 M). 출력 N과 입력 M을 **점퍼선으로 연결**하면 루프백으로 검사하고(`loopback OK`), 연결이 없으면 출력 핀을 멀티미터/LED로 본다. `build_on_robot.sh`가 마지막에 실행 명령을 출력한다.
 로그에 `HALSim VMX: DIO 0 -> VMX channel N (output)`가 나오면 claim 성공, `cannot claim VMX channel ...`이 나오면 실패(채널이 그 용도를 지원하지 않거나 이미 쓰는 중).
 
+**첫 실행 결과(2026-10-10, 출력=VMX 10, 입력=VMX 11):** 확장 로드(`HAL Extensions: Successfully loaded extension`), 플러그인 사용, 두 채널 claim, 출력 값이 보드에 전달됨(SPI 쓰기 19회 -> 38회, CRC 오류 0)까지 **확인됐다.**
+루프백 읽기는 항상 1이었다(`wrote 0, read 1`). Studica `DIO`는 입력을 **풀업**으로 열기 때문에 연결되지 않은 입력은 항상 1을 읽는다. 배선(또는 보드 표기와 HAL 채널 번호의 차이)을 먼저 의심한다. **루프백 읽기는 아직 확인 안 됨.**
+배선과 확장을 가르려면 HAL/확장 없이 Studica `DIO`만 쓰는 `dio_probe`를 먼저 돌린다:
+
+```bash
+sudo ~/halsim_vmx-build/dio_probe 10 11
+```
+`loopback OK`면 배선과 채널 번호는 정상이므로 확장 쪽을 본다. 실패하면 배선/채널 번호 문제다(`input before driving anything: 1`이면 입력이 어디에도 연결 안 된 것).
+
 ### 6d. 기존 확인 항목
 
 최소 Java 로봇 프로젝트(또는 PC에서 `./gradlew deploy`한 결과)로 확인한다. 수동 실행 예(명령 미검증):

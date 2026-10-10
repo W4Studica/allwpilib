@@ -11,6 +11,7 @@
 #   libhalsim_vmx.so   the HALSIM extension (HALSIM_EXTENSIONS)
 #   hal_dio_test       drives WPILib DIO through the sim HAL
 #   vmx_channels       prints the VMX channel map
+#   dio_probe          loopback test of two VMX channels with the Studica DIO class (no HAL, no extension)
 # Libraries (default ~/wpilib-libs): libwpiHal.so, libwpiutil.so, libntcore.so, libdatalog.so, libwpinet.so
 #
 # NOT YET RUN on a robot.
@@ -97,10 +98,13 @@ run g++ -std=c++20 -shared -fPIC -O2 -Wall -Wextra "${INC[@]}" -I"$EXT_DIR/src/m
 info "hal_dio_test"
 run g++ -std=c++20 -O2 -Wall -Wextra "${INC[@]}" "$EXT_DIR/tools/hal_dio_test.cpp" "${LINK[@]}" -lpthread -o "$OUT_DIR/hal_dio_test"
 
-info "vmx_channels"
+info "vmx_channels and dio_probe (need VMXPi.h)"
 if [ -f /usr/local/include/vmxpi/VMXPi.h ]; then
   run g++ -std=c++17 -O2 -Wall -Wextra -I/usr/local/include/vmxpi "$EXT_DIR/tools/vmx_channels.cpp" \
     -L/usr/local/lib/vmxpi -lvmxpi_hal_cpp -lrt -lpthread -latomic -o "$OUT_DIR/vmx_channels"
+  run g++ -std=c++17 -O2 -Wall -Wextra -I/usr/local/include/vmxpi -I"$AW_DIR/studica_drivers" \
+    "$EXT_DIR/tools/dio_probe.cpp" "$AW_DIR/studica_drivers/dio.cpp" \
+    -L/usr/local/lib/vmxpi -lvmxpi_hal_cpp -lrt -lpthread -latomic -o "$OUT_DIR/dio_probe"
 else
   echo "  skipped: /usr/local/include/vmxpi/VMXPi.h not found"
 fi
@@ -119,6 +123,9 @@ cat <<EOF
 ==> Done$( [ "$DRY_RUN" = 1 ] && echo " (dry run: nothing was built)" )
 Find the VMX channel numbers first (the VMX must not be in use by another process):
   sudo $OUT_DIR/vmx_channels
+
+To check a wire between two VMX channels without HALSim (isolates wiring from the extension):
+  sudo $OUT_DIR/dio_probe <out-vmx-channel> <in-vmx-channel>
 
 Then drive a DIO output through the simulation HAL (WPILib DIO 0 -> VMX channel <N>; DIO 1 -> VMX channel <M>, wired to <N> for a loopback):
   sudo env LD_LIBRARY_PATH=$LIBS_DIR \\
