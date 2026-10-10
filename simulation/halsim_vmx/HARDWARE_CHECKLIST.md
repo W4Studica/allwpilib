@@ -261,7 +261,7 @@ sudo HALSIM_EXTENSIONS="/경로/libhalsim_vmx.so" \
 |---|---|---|---|
 | DigitalOutput | `set(true/false)`를 번갈아, 멀티미터/LED로 확인 | 핀이 토글된다 | |
 | DigitalInput | 점퍼로 HIGH/LOW를 줌 | `get()`이 따라간다 | |
-| AnalogInput | 가변저항/알려진 전압을 줌 | `getVoltage()`가 실제 전압과 일치한다 | |
+| AnalogInput | 가변저항/알려진 전압을 줌 | `getVoltage()`가 실제 전압과 일치한다 | **확인됨(2026-10-10, `hal_analog_test 0 10`, `HALSIMVMX_ANALOG_MAP="0:22"`):** 핀 22에 5V를 연결 -> `4.996 V`(40회 모두 동일). 클레임 로그 `AnalogIn 0 -> VMX channel 22`, 읽기 52,099회 CRC 불일치/실패 0. GND/3.3V 구간은 측정 안 함(0~5V 범위 가정, 스케일은 5V 한 점으로만 확인) |
 | Encoder | 손으로 돌림 | `get()`이 증가/감소, `reset()` 후 0, `setReverseDirection(true)`이면 부호가 반대 | |
 | IMU(navX) | §7 참고 | | |
 
