@@ -105,6 +105,7 @@ cmake_dependent_option(
 option(WPILIB_WITH_SIMULATION_MODULES "Build simulation modules" ON)
 option(WPILIB_WITH_BENCHMARK "Build the benchmark project" ${PROJECT_IS_TOP_LEVEL})
 option(WPILIB_WITH_EXECUTABLES "Build executables" ${PROJECT_IS_TOP_LEVEL})
+option(WPILIB_WITH_STUDICA "Build Studica VMX drivers (needs vmxpi_hal_cpp)" OFF)
 
 # Options for using a package manager (e.g., vcpkg) for certain dependencies.
 option(WPILIB_USE_SYSTEM_EIGEN "Use system Eigen" OFF)
@@ -357,6 +358,10 @@ endif()
 
 if(WPILIB_WITH_BENCHMARK)
     add_subdirectory(benchmark)
+endif()
+
+if(WPILIB_WITH_STUDICA)
+    add_subdirectory(studica_drivers)
 endif()
 
 if(WPILIB_WITH_SIMULATION_MODULES)
