@@ -236,12 +236,13 @@ Titan은 `Enable(true)` 전에는 명령을 무시하고, 200 ms 동안 CAN 메�
 
 - [x] 설치 후 `systemctl is-active robot_manager`가 `active` (로봇에서 확인됨. 단, `robotCommand`는 아직 없어서 프로그램을 돌려 본 건 아님)
 - [x] `./install.sh --sudoers`가 적용되고 `sudo -n systemctl enable robot_manager`가 비밀번호 없이 된다 (로봇에서 확인됨)
-- [ ] `/home/<user>/robotCommand`가 없으면 로그에 한 번만 대기 메시지가 나온다
-- [ ] 간단한 `robotCommand`(`sleep 600` 한 줄)를 두면 실행된다. `journalctl -u robot_manager -f`
+- [x] `/home/<user>/robotCommand`가 없으면 로그에 한 번만 대기 메시지가 나온다 (로봇에서 확인)
+- [x] 간단한 `robotCommand`를 두면 실행된다. `journalctl -u robot_manager -f` (로봇에서 확인: `started robot program (pid ...)`)
 - [ ] 프로세스를 죽이면 다시 실행된다(크래시 반복 시 간격이 1→10초로 늘어난다)
 - [ ] `sudo systemctl stop robot_manager`가 로봇 프로세스 트리까지 정리한다(`pgrep -af robotCommand`/자식 확인)
-- [ ] 로봇 프로그램이 **root로** 실행된다(`ps -o user= -p <pid>`)
-- [ ] 플랫폼 프로필: `kernel_regex`가 `uname -r`과 일치하면 환경변수가 로봇 프로세스에 들어간다(`cat /proc/<pid>/environ | tr '\0' '\n' | grep HALSIMVMX`)
+- [x] 로봇 프로그램이 **root로** 실행된다 (로봇에서 확인: `user=root`)
+- [x] `config.json`의 `env`가 로봇 프로세스에 들어간다 (로봇에서 확인: `LD_PRELOAD=/opt/robot_manager/lib/libvmx_gpio_isr_shim.so`)
+- [ ] 플랫폼 프로필: `kernel_regex`가 `uname -r`과 일치하면 프로필의 환경변수가 들어간다 (프로필 `env`는 같은 코드 경로이나 아직 프로필 자체는 비어 있어 시험 안 함)
 
 ### GradleRIO `./gradlew deploy` (PC에서)
 
