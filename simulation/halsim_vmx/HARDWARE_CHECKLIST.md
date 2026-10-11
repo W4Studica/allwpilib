@@ -262,7 +262,7 @@ sudo HALSIM_EXTENSIONS="/경로/libhalsim_vmx.so" \
 | DigitalOutput | `set(true/false)`를 번갈아, 멀티미터/LED로 확인 | 핀이 토글된다 | |
 | DigitalInput | 점퍼로 HIGH/LOW를 줌 | `get()`이 따라간다 | |
 | AnalogInput | 가변저항/알려진 전압을 줌 | `getVoltage()`가 실제 전압과 일치한다 | **확인됨(2026-10-10, `hal_analog_test 0 10`, `HALSIMVMX_ANALOG_MAP="0:22"`):** 핀 22에 5V를 연결 -> `4.996 V`(40회 모두 동일). 클레임 로그 `AnalogIn 0 -> VMX channel 22`, 읽기 52,099회 CRC 불일치/실패 0. GND/3.3V 구간은 측정 안 함(0~5V 범위 가정, 스케일은 5V 한 점으로만 확인) |
-| Encoder | 손으로 돌림 | `get()`이 증가/감소, `reset()` 후 0, `setReverseDirection(true)`이면 부호가 반대 | |
+| Encoder | 손으로 돌림 | `get()`이 증가/감소, `reset()` 후 0, `setReverseDirection(true)`이면 부호가 반대 | **부분 확인됨(2026-10-11, C++ `vmx-cpp-test`를 `./gradlew deploy`로 올려 실행, `HALSIMVMX_DIO_MAP="0:0,1:1"`, FlexDIO 0/1):** 모터가 도는 동안 `wpi::Encoder::Get()`이 0.25초에 약 120씩 증가(0 -> 2492), 모터가 멈추면 값이 그대로. reset/반대 방향은 미확인 |
 | IMU(navX) | §7 참고 | | |
 
 - [ ] DIO 출력/입력, AnalogInput, Encoder가 동작한다
@@ -286,16 +286,21 @@ roll/pitch/X·Y축 각속도/가속도는 **부호를 그대로** 넘겼다. 이
 
 ### Titan 안전 — `TitanEnableGuard`
 
+**실측(2026-10-11) — `Titan::Enable()`만으로는 on/off/on이 안 된다.** 처음에는 disabled로 시작해서 enable해도 모터가 안 돌았고 Titan LED가 빨강-초록-빨강으로 흔들렸다(문서상 enable이면 보라색).
+원인: `Titan::Enable(true)`는 ENABLED_FLAG를 **100 ms 주기**로, `Enable(false)`는 DISABLED_FLAG를 **10 ms 주기**로 보내고, VMX는 멈추라고 하기 전까지 주기 프레임을 계속 보낸다(`VMXCAN_SEND_PERIOD_STOP_REPEATING`). disabled로 한 번 들어가면 DISABLED_FLAG가 ENABLED_FLAG보다 10배 자주 나가서 Titan이 계속 disabled다. Studica 예제는 "시작에 enable 한 번, 끝에 disable 한 번"이라 드러나지 않았다.
+**조치:** `StudicaTitan`(`src/studica/native/include/wpi/halsim/vmx/StudicaTitan.hpp`)이 반대쪽 프레임의 주기 송신을 멈춘 뒤 `Titan::Enable()`을 부른다(`studica_drivers` 무수정). `TitanEnableGuard<StudicaTitan>`로 쓴다. 로봇에서 disabled(2초) -> enabled(3초) -> disabled -> enabled -> e-stop 순서로 모터가 enabled 구간에서만 돌았다.
+`GetSerialNumber()`는 Titan 응답이 오기 전에 읽으면 쓰레기 값을 돌려준다(Titan 생성 뒤 1초 대기 필요, 읽기 실패를 확인하지 않음).
+
 사용자의 MockDS가 **`setDsAttached(true)`와 `setEnabled(...)`를 둘 다** 해야 한다(sim HAL은 DS가 attached일 때만 컨트롤 워드를 채운다).
 Titan은 `Enable(true)` 전에는 명령을 무시하고, 200 ms 동안 CAN 메시지가 없으면 스스로 멈춘다(`titan.hpp`).
 
 `studica_driver::Titan titan(id, freq, distPerTick, wpilibvmx::SharedVMX());` 다음 `TitanEnableGuard<studica_driver::Titan> guard{titan};` `guard.Start();`로 만든다.
 (사용자 코드는 enabled 동안 150 ms 이내로 `SetSpeed`를 계속 보내야 한다.)
 
-- [ ] disabled에서 `SetSpeed`를 보내도 **모터가 안 돈다**
-- [ ] enabled로 바꾸면 돈다
-- [ ] 다시 disabled로 바꾸면 **즉시** 멈춘다
-- [ ] E-stop이면 멈춘다
+- [x] disabled에서 `SetSpeed`를 보내도 **모터가 안 돈다** (로봇에서 확인, 2026-10-11)
+- [x] enabled로 바꾸면 돈다
+- [x] 다시 disabled로 바꾸면 **즉시** 멈춘다
+- [x] E-stop이면 멈춘다
 - [ ] 로봇 프로그램을 `kill -9`로 죽이면 모터가 약 200 ms 안에 멈춘다(하드웨어 안전망)
 - [ ] 로봇 프로그램을 `kill -TERM`으로 종료하면 `Enable(false)`가 먼저 가고 멈춘다
 

@@ -32,6 +32,10 @@ namespace wpilibvmx {
  * control word is only non-zero while the DS is marked attached, so such a MockDS must set
  * DsAttached as well as Enabled (DriverStationSim.setDsAttached(true)).
  *
+ * Do not pass a studica_driver::Titan directly: its Enable() starts periodic CAN frames that are never
+ * cancelled, so after the first disable the Titan can no longer be enabled. Pass a
+ * wpilibvmx::StudicaTitan (halsim_vmx_studica) instead.
+ *
  * TitanT only needs `void Enable(bool)`, so this is a template and can be tested without
  * hardware. The Titan must outlive the guard: declare the guard after the Titan.
  */

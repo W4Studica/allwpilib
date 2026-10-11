@@ -75,7 +75,7 @@ Studica 백엔드(`libhalsim_vmx_studica.so`)는 VMX 위에서 한 번만 빌드
 | 방안 | 내용 | 비고 |
 |---|---|---|
 | **S1 (시작점)** | 사용자 코드가 `DriverStation::IsEnabled()`로 `titan.Enable(...)`을 호출. 헬퍼 제공 | Studica 클래스 수정 없음. 사용자가 빼먹을 수 있음 |
-| **S4 (구현됨)** | **`TitanEnableGuard<TitanT>`**(헤더 전용 템플릿, `studica_drivers` 밖): HAL 컨트롤 워드(`HAL_GetUncachedControlWord`)에서 enable/E-stop을 읽어 **상태가 바뀔 때만** `titan.Enable()` 호출. 중지/소멸자에서는 항상 `Enable(false)`. 모터 명령은 보내지 않으므로 사용자 코드가 enabled 동안 150 ms 이내로 `SetSpeed`를 계속 보내야 함. `Enable(bool)`만 있으면 되는 템플릿이라 하드웨어 없이 테스트함 | **주의: sim HAL은 `DsAttached`가 true일 때만 컨트롤 워드를 채운다.** 사용자의 MockDS는 `setEnabled(true)`와 함께 `setDsAttached(true)`도 해야 함. Titan은 가드보다 먼저 만들어야 함 |
+| **S4 (구현됨)** | **`TitanEnableGuard<TitanT>`**(헤더 전용 템플릿, `studica_drivers` 밖): HAL 컨트롤 워드(`HAL_GetUncachedControlWord`)에서 enable/E-stop을 읽어 **상태가 바뀔 때만** `titan.Enable()` 호출. 중지/소멸자에서는 항상 `Enable(false)`. 모터 명령은 보내지 않으므로 사용자 코드가 enabled 동안 150 ms 이내로 `SetSpeed`를 계속 보내야 함. `Enable(bool)`만 있으면 되는 템플릿이라 하드웨어 없이 테스트함 | **주의: sim HAL은 `DsAttached`가 true일 때만 컨트롤 워드를 채운다.** 사용자의 MockDS는 `setEnabled(true)`와 함께 `setDsAttached(true)`도 해야 함. Titan은 가드보다 먼저 만들어야 함. **`studica_driver::Titan`을 가드에 직접 넣으면 안 되고 `wpilibvmx::StudicaTitan`으로 감싸서 넣는다**: `Titan::Enable()`의 주기 송신(enable 100 ms, disable 10 ms)이 서로를 취소하지 않아 disable 뒤에는 다시 enable되지 않는다(실측) |
 | 하드웨어 안전망 | 프로세스가 죽어도 Titan이 **200 ms 후 스스로 정지**(`titan.hpp` 주석, ROS2 README의 "CAN Watchdog") | 소프트웨어 버그에 대비한 마지막 방어선 |
 
 **MockDS는 사용자가 로봇 코드로 작성한다(이 프로젝트 범위 밖).** MockDS가 sim의 `DriverStation` 데이터(`Enabled`, `RobotMode`, `EStop`)를 채우면, 우리 쪽(Titan 헬퍼, 안전 처리)은 그 값을 **읽기만** 한다. `robot_manager`도 관여하지 않는다.
