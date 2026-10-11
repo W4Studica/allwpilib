@@ -309,6 +309,10 @@ roll/pitch/X·Y축 각속도/가속도는 **부호를 그대로** 넘겼다. 이
 원인: `Titan::Enable(true)`는 ENABLED_FLAG를 **100 ms 주기**로, `Enable(false)`는 DISABLED_FLAG를 **10 ms 주기**로 보내고, VMX는 멈추라고 하기 전까지 주기 프레임을 계속 보낸다(`VMXCAN_SEND_PERIOD_STOP_REPEATING`). disabled로 한 번 들어가면 DISABLED_FLAG가 ENABLED_FLAG보다 10배 자주 나가서 Titan이 계속 disabled다. Studica 예제는 "시작에 enable 한 번, 끝에 disable 한 번"이라 드러나지 않았다.
 **조치:** `StudicaTitan`(`src/studica/native/include/wpi/halsim/vmx/StudicaTitan.hpp`)이 반대쪽 프레임의 주기 송신을 멈춘 뒤 `Titan::Enable()`을 부른다(`studica_drivers` 무수정). `TitanEnableGuard<StudicaTitan>`로 쓴다. 로봇에서 disabled(2초) -> enabled(3초) -> disabled -> enabled -> e-stop 순서로 모터가 enabled 구간에서만 돌았다.
 **Titan 엔코더(엔코더를 Titan 모터 0 단자에 연결, 2026-10-11):** enabled 구간에서 `GetEncoderCount`가 0.25초에 약 125씩 증가(51 -> 2590), `GetRPM`은 약 655(속도 0.2). disabled/e-stop에서는 카운트 정지, RPM 0. VMX FlexDIO에 연결했을 때 `wpi::Encoder`가 센 속도(0.25초에 약 120)와 일치한다. `ResetEncoder`는 반영에 약 0.2초 걸린다(프로그램 시작 직후 이전 카운트가 한 번 보임).
+**실측 2 — 프로그램이 죽어도 모터가 계속 돌았다 (2026-10-11).** `Titan::Enable(true)`는 ENABLED_FLAG를 VMX **보드**가 100 ms마다 반복 송신하게 맡기고, 프로세스가 `kill -9`로 죽어도 보드는 계속 보낸다. Titan은 "200 ms 동안 아무 메시지도 없으면 스스로 멈춘다"는 안전장치가 있는데, 반복 프레임이 계속 와서 마지막 속도로 계속 돌았다. `systemctl stop`(deploy가 파일을 올리기 전에 하는 일)으로 멈춰도 마찬가지였다.
+**조치:** `StudicaTitan`이 `Titan::Enable()`을 쓰지 않고 enable/disable 프레임을 **반복 송신 없이 한 번씩** 보내고(시작할 때 이전 실행이 보드에 남긴 반복 송신도 지움), `TitanEnableGuard`가 20 ms마다 `KeepAlive()`로 현재 상태를 다시 보낸다. 프로그램이 어떻게 죽든 프레임이 끊겨서 Titan이 스스로 멈춘다. `halsim_vmx` 단위 테스트 37개 통과, 실기기에서 `kill -9`와 `systemctl stop` 모두 즉시 멈춤.
+**주의:** 가드에 넘기는 객체가 `KeepAlive()`를 가져야 한다. `StudicaTitan`을 다른 클래스로 감싸서 넘길 때는 `KeepAlive()`도 전달해야 한다(안 하면 enable이 한 번만 나가고 Titan이 200 ms 뒤에 스스로 disable된다; 시험 프로그램에서 실제로 겪음).
+**부수 발견 — `kill -9`는 pigpio 자원을 샌다.** 강제 종료된 프로세스는 `gpioTerminate`를 못 불러서 GPU 메모리(mailbox)가 새고, 몇 번 쌓이면 다음 시작이 `initMboxBlock: init mbox zaps failed` / `Error initializing pigpio library`로 실패하고 프로그램이 곧 세그폴트한다. **재부팅하면 풀린다.** `robot_manager`는 SIGINT를 먼저 보내서 정상 경로에서는 안 걸리고, `stop_grace_seconds` 안에 안 끝나서 SIGKILL이 나갈 때만 해당한다.
 `GetSerialNumber()`는 Titan 응답이 오기 전에 읽으면 쓰레기 값을 돌려준다(Titan 생성 뒤 1초 대기 필요, 읽기 실패를 확인하지 않음).
 
 사용자의 MockDS가 **`setDsAttached(true)`와 `setEnabled(...)`를 둘 다** 해야 한다(sim HAL은 DS가 attached일 때만 컨트롤 워드를 채운다).
@@ -321,8 +325,9 @@ Titan은 `Enable(true)` 전에는 명령을 무시하고, 200 ms 동안 CAN 메�
 - [x] enabled로 바꾸면 돈다
 - [x] 다시 disabled로 바꾸면 **즉시** 멈춘다
 - [x] E-stop이면 멈춘다
-- [ ] 로봇 프로그램을 `kill -9`로 죽이면 모터가 약 200 ms 안에 멈춘다(하드웨어 안전망)
-- [ ] 로봇 프로그램을 `kill -TERM`으로 종료하면 `Enable(false)`가 먼저 가고 멈춘다
+- [x] 로봇 프로그램을 `kill -9`로 죽이면 모터가 멈춘다 (2026-10-11, 킬 직후 멈춤. 정확한 시간은 재지 않았고 눈으로 확인). **처음에는 멈추지 않았다**: 아래 "실측 2" 참고
+- [x] `systemctl stop robot_manager`(SIGINT로 종료) 직후 모터가 멈춘다 (2026-10-11)
+- [ ] `kill -TERM`: HAL의 `SIGTERM` 처리는 VMX/pigpio만 정리하고 프로세스를 끝내지 않는다(앞의 `gdb` 측정). 그 상태에서 Titan이 어떻게 되는지는 시험 안 함. `robot_manager`는 `SIGINT`를 먼저 보내서 이 경로를 타지 않는다
 
 ## 8. `robot_manager`와 deploy end-to-end
 

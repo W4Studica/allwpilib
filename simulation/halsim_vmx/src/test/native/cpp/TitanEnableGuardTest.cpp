@@ -31,6 +31,19 @@ struct FakeTitan {
   std::vector<bool> calls;
 };
 
+// A Titan whose switch also repeats its state, like wpilibvmx::StudicaTitan.
+struct KeepAliveTitan : FakeTitan {
+  void KeepAlive() {
+    std::scoped_lock lock{mutex};
+    ++keepAlives;
+  }
+  int KeepAlives() {
+    std::scoped_lock lock{mutex};
+    return keepAlives;
+  }
+  int keepAlives = 0;
+};
+
 template <class Pred>
 bool WaitFor(Pred pred) {
   auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -152,4 +165,26 @@ TEST_CASE("A guard with the default source follows the simulated DS",
   guard.Poll();
 
   REQUIRE(titan.Calls() == std::vector<bool>{false, true, false});
+}
+
+TEST_CASE("A Titan with KeepAlive() hears its state again on every poll, but Enable() only on a change",
+          "[halsim_vmx][titan]") {
+  KeepAliveTitan titan;
+  TitanEnableGuard<KeepAliveTitan> guard{titan, [] { return true; }};
+  guard.Poll();  // the first pass: Enable(true)
+  REQUIRE(titan.Calls() == std::vector<bool>{true});
+  REQUIRE(titan.KeepAlives() == 0);
+  guard.Poll();
+  guard.Poll();
+  guard.Poll();
+  REQUIRE(titan.Calls() == std::vector<bool>{true});  // no new Enable()
+  REQUIRE(titan.KeepAlives() == 3);
+}
+
+TEST_CASE("A Titan without KeepAlive() still works", "[halsim_vmx][titan]") {
+  FakeTitan titan;
+  TitanEnableGuard<FakeTitan> guard{titan, [] { return true; }};
+  guard.Poll();
+  guard.Poll();
+  REQUIRE(titan.Calls() == std::vector<bool>{true});
 }

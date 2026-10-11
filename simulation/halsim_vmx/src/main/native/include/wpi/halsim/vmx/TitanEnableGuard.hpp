@@ -32,9 +32,11 @@ namespace wpilibvmx {
  * control word is only non-zero while the DS is marked attached, so such a MockDS must set
  * DsAttached as well as Enabled (DriverStationSim.setDsAttached(true)).
  *
- * Do not pass a studica_driver::Titan directly: its Enable() starts periodic CAN frames that are never
- * cancelled, so after the first disable the Titan can no longer be enabled. Pass a
- * wpilibvmx::StudicaTitan (halsim_vmx_studica) instead.
+ * Do not pass a studica_driver::Titan directly: its Enable() starts periodic CAN frames on the VMX board that are
+ * never cancelled. After the first disable the Titan can no longer be enabled, and after the program has died (kill -9,
+ * a crash) the board keeps sending them, so the Titan never sees the silence that makes it stop (MEASURED: the motor
+ * kept turning). Pass a wpilibvmx::StudicaTitan (halsim_vmx_studica) instead: it sends single frames, and the guard
+ * repeats them through KeepAlive() every poll, so they stop when the program stops.
  *
  * TitanT only needs `void Enable(bool)`, so this is a template and can be tested without
  * hardware. The Titan must outlive the guard: declare the guard after the Titan.
@@ -99,6 +101,11 @@ class TitanEnableGuard {
       m_titan.Enable(enabled);
       m_state = enabled;
       m_haveState = true;
+    } else if constexpr (requires { m_titan.KeepAlive(); }) {
+      // Repeat the state on every pass, from this process. The Titan stops by itself when it hears nothing for 200 ms, but
+      // only if nothing repeats the enable for it: studica_driver::Titan::Enable() hands the repetition to the VMX board,
+      // which keeps sending after the program has died (MEASURED: the motor kept turning after kill -9).
+      m_titan.KeepAlive();
     }
   }
 
