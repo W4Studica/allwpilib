@@ -364,10 +364,12 @@ void HALSimVMX::PollImu() {
     return;
   }
 
-  // Unit and sign conversion (navX -> WPILib IMU HAL). ASSUMPTIONS, unverified
-  // on hardware: navX yaw and Z rate are positive clockwise while WPILib is
-  // positive counterclockwise, so they are negated; roll, pitch, X/Y rates and
-  // acceleration are passed through unchanged.
+  // Unit and sign conversion (navX -> WPILib IMU HAL). navX yaw and Z rate are
+  // positive clockwise while WPILib is positive counterclockwise, so they are
+  // negated. MEASURED on a VMX-pi: yaw (a counterclockwise turn increased
+  // OnboardIMU yaw) and acceleration Z (+9.8 m/s^2 when flat). NOT measured:
+  // the Z rate sign (assumed to follow yaw) and the roll/pitch axes and signs,
+  // which, with X/Y rates and X/Y acceleration, are passed through unchanged.
   HALSIM_SetIMUYaw(-s.yawDeg * kDegToRad);
   HALSIM_SetIMUAngleX(s.rollDeg * kDegToRad);
   HALSIM_SetIMUAngleY(s.pitchDeg * kDegToRad);
