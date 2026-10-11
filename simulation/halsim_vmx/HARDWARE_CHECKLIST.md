@@ -239,6 +239,16 @@ rm ~/robotCommand; sudo systemctl start robot_manager
    **로봇 확인됨(2026-10-10, `d31287e`):** `stopping robot program (pid ...): SIGINT then SIGTERM, then SIGKILL; 5s in total` -> `robot program stopped by SIGINT after 0.2s`. `sending SIGKILL`, systemd의 `Killing process`/`final-sigterm`은 없었다. 위 문제 1(그룹 정리 전 종료)과 2(SIGTERM 무반응) 모두 해결.
    참고: 옛 Studica GradleRIO 포크는 `frcKillRobot.sh -t`(재시작은 `-t -r`)로 멈추고 `/home/lvuser/robotCommand`에 명령을 쓴다. 그 스크립트가 보내는 신호는 소스로 확인하지 못했다(VMX 이미지 안에 있음).
 
+### 6d-2. 프로그램 종료 때 `SIGILL`(종료 코드 132) — `libMrcLib`의 LSE 명령 (2026-10-11)
+
+C++ 프로그램(`vmx-cpp-test`, `./gradlew deploy`로 올림)이 시험을 끝내고 종료할 때마다 `Illegal instruction (core dumped)`, 종료 코드 132가 났다. `gdb`로 확인: `uv_library_shutdown()`(`libMrcLib.so`) 안의 `swp w1, w1, [x0]`.
+**원인:** `swp`/`ldadd`/`cas`는 ARMv8.1 LSE 원자 명령인데 Pi 4(Cortex-A72, ARMv8.0)에는 없다. `libMrcLib.so`(WPILib `mrclib`, 소스 비공개)는 `linuxarm64`라는 이름으로 배포되지만 **SystemCore용 Buildroot GCC 14.3**으로 빌드돼 LSE 명령이 1,219곳에 들어 있다(`DsClient`, `MulticastResolverClient`, `UvDatapath` 등 Driver Station 네트워크 쪽). 다른 WPILib 라이브러리, 우리 실행 파일, `libvmxpi_hal_cpp`, 우리 플러그인에는 CPU를 확인해서 쓰는 libgcc 보조 함수(`__aarch64_*`)뿐이라 안전하다(PC에서 약 90개 라이브러리를 디스어셈블해 확인, OpenCV는 안 봄). `libwpiHal`은 `mrclib`를 링크하지 않는다(upstream 커밋 `7d214e53a`).
+**조치:** `Robot-Manager/lse_emu/` — `SIGILL` 핸들러로 LSE 명령을 `ldxr/stxr`로 대신 실행하는 `LD_AUDIT` 라이브러리. `LD_PRELOAD`로는 안 된다(로더가 라이브러리를 뒤쪽부터 초기화해서 프리로드는 MrcLib의 생성자보다 늦다, qemu에서 재현). `robot_manager`가 `/proc/cpuinfo`에 `atomics`가 없으면 스스로 `LD_AUDIT`을 설정한다.
+- [x] Pi 4에서 `make test`: 224개 명령 형태 + 스레드 원자성 + 생성자 + 외부 `SIGILL` 모두 통과
+- [x] 서비스로 돌린 프로그램이 종료 코드 **0**으로 끝난다 (`emulated 1 LSE instruction`)
+- [x] 비용: **명령당 약 26.8 µs(일반 원자 덧셈의 약 1,200배)**. 지금 경로에서는 종료 때 1개뿐이라 영향 없음. Driver Station 네트워크 코드를 쓰면 느려질 수 있다(`VMX_LSE_EMU_DEBUG=1`로 개수를 먼저 센다).
+- [ ] MrcLib의 Driver Station 네트워크 코드를 실제로 쓰는 경우의 동작/속도는 미확인
+
 ### 6e. 기존 확인 항목
 
 최소 Java 로봇 프로젝트(또는 PC에서 `./gradlew deploy`한 결과)로 확인한다. 수동 실행 예(명령 미검증):
