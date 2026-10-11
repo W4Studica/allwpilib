@@ -289,6 +289,7 @@ roll/pitch/X·Y축 각속도/가속도는 **부호를 그대로** 넘겼다. 이
 **실측(2026-10-11) — `Titan::Enable()`만으로는 on/off/on이 안 된다.** 처음에는 disabled로 시작해서 enable해도 모터가 안 돌았고 Titan LED가 빨강-초록-빨강으로 흔들렸다(문서상 enable이면 보라색).
 원인: `Titan::Enable(true)`는 ENABLED_FLAG를 **100 ms 주기**로, `Enable(false)`는 DISABLED_FLAG를 **10 ms 주기**로 보내고, VMX는 멈추라고 하기 전까지 주기 프레임을 계속 보낸다(`VMXCAN_SEND_PERIOD_STOP_REPEATING`). disabled로 한 번 들어가면 DISABLED_FLAG가 ENABLED_FLAG보다 10배 자주 나가서 Titan이 계속 disabled다. Studica 예제는 "시작에 enable 한 번, 끝에 disable 한 번"이라 드러나지 않았다.
 **조치:** `StudicaTitan`(`src/studica/native/include/wpi/halsim/vmx/StudicaTitan.hpp`)이 반대쪽 프레임의 주기 송신을 멈춘 뒤 `Titan::Enable()`을 부른다(`studica_drivers` 무수정). `TitanEnableGuard<StudicaTitan>`로 쓴다. 로봇에서 disabled(2초) -> enabled(3초) -> disabled -> enabled -> e-stop 순서로 모터가 enabled 구간에서만 돌았다.
+**Titan 엔코더(엔코더를 Titan 모터 0 단자에 연결, 2026-10-11):** enabled 구간에서 `GetEncoderCount`가 0.25초에 약 125씩 증가(51 -> 2590), `GetRPM`은 약 655(속도 0.2). disabled/e-stop에서는 카운트 정지, RPM 0. VMX FlexDIO에 연결했을 때 `wpi::Encoder`가 센 속도(0.25초에 약 120)와 일치한다. `ResetEncoder`는 반영에 약 0.2초 걸린다(프로그램 시작 직후 이전 카운트가 한 번 보임).
 `GetSerialNumber()`는 Titan 응답이 오기 전에 읽으면 쓰레기 값을 돌려준다(Titan 생성 뒤 1초 대기 필요, 읽기 실패를 확인하지 않음).
 
 사용자의 MockDS가 **`setDsAttached(true)`와 `setEnabled(...)`를 둘 다** 해야 한다(sim HAL은 DS가 attached일 때만 컨트롤 워드를 채운다).
