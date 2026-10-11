@@ -281,7 +281,7 @@ sudo HALSIM_EXTENSIONS="/경로/libhalsim_vmx.so" \
 | DigitalOutput | `set(true/false)`를 번갈아, 멀티미터/LED로 확인 | 핀이 토글된다 | |
 | DigitalInput | 점퍼로 HIGH/LOW를 줌 | `get()`이 따라간다 | |
 | AnalogInput | 가변저항/알려진 전압을 줌 | `getVoltage()`가 실제 전압과 일치한다 | **확인됨(2026-10-10, `hal_analog_test 0 10`, `HALSIMVMX_ANALOG_MAP="0:22"`):** 핀 22에 5V를 연결 -> `4.996 V`(40회 모두 동일). 클레임 로그 `AnalogIn 0 -> VMX channel 22`, 읽기 52,099회 CRC 불일치/실패 0. GND/3.3V 구간은 측정 안 함(0~5V 범위 가정, 스케일은 5V 한 점으로만 확인) |
-| Encoder | 손으로 돌림 | `get()`이 증가/감소, `reset()` 후 0, `setReverseDirection(true)`이면 부호가 반대 | **부분 확인됨(2026-10-11, C++ `vmx-cpp-test`를 `./gradlew deploy`로 올려 실행, `HALSIMVMX_DIO_MAP="0:0,1:1"`, FlexDIO 0/1):** 모터가 도는 동안 `wpi::Encoder::Get()`이 0.25초에 약 120씩 증가(0 -> 2492), 모터가 멈추면 값이 그대로. reset/반대 방향은 미확인 |
+| Encoder | 손으로 돌림 | `get()`이 증가/감소, `reset()` 후 0, `setReverseDirection(true)`이면 부호가 반대 | **부분 확인됨(2026-10-11, C++ `vmx-cpp-test`를 `./gradlew deploy`로 올려 실행, `HALSIMVMX_DIO_MAP="0:0,1:1"`, FlexDIO 0/1):** 모터가 도는 동안 `wpi::Encoder::Get()`이 0.25초에 약 120씩 증가(0 -> 2492), 모터가 멈추면 값이 그대로. **reset과 `SetReverseDirection`도 확인됨(2026-10-11, 엔코더를 VMX FlexDIO 0/1에 연결, 모터 0.2):** `Reset()`하면 1388 -> 17로 돌아가 다시 증가, `SetReverseDirection(true)` 뒤에는 같은 회전 방향인데 카운트가 감소(`-1626`, `-1752`, ...)하고 방향 비트가 0이 된다. 도중에 바꾸면 현재 카운트의 부호도 같이 뒤집힌다(+1505 -> -1626). 해제하면 +4162로 돌아옴 |
 | IMU(navX) | §7 참고 | | |
 
 - [ ] DIO 출력/입력, AnalogInput, Encoder가 동작한다
