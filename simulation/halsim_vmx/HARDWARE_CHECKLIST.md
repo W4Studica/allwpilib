@@ -249,6 +249,15 @@ C++ 프로그램(`vmx-cpp-test`, `./gradlew deploy`로 올림)이 시험을 끝�
 - [x] 비용: **명령당 약 26.8 µs(일반 원자 덧셈의 약 1,200배)**. 지금 경로에서는 종료 때 1개뿐이라 영향 없음. Driver Station 네트워크 코드를 쓰면 느려질 수 있다(`VMX_LSE_EMU_DEBUG=1`로 개수를 먼저 센다).
 - [ ] MrcLib의 Driver Station 네트워크 코드를 실제로 쓰는 경우의 동작/속도는 미확인
 
+### 6d-3. 로봇에서 빌드하지 않고 `./gradlew deploy`만으로 (2026-10-11)
+
+C++ 프로젝트(`vmx-cpp-test`)가 `halsim_vmx`와 Studica 백엔드 플러그인을 **PC에서 교차 빌드**(`NativeLibrarySpec` 컴포넌트 2개, `linuxarm64`)하고 deploy가 라이브러리 폴더(`~/wpilib/third-party/lib`)에 같이 올린다. 로봇에서 가져오는 것은 `VMXPi.h`와 `libvmxpi_hal_cpp.so`(OS 이미지에 있는 것)뿐이다(`fetchVmxSdkvmx`).
+- [x] 로봇 로그: `HALSim VMX: using backend /home/ubuntu/wpilib/third-party/lib/libhalsim_vmx_studica.so`, `Successfully loaded extension`, `IMU claimed`, `Encoder 0 -> VMX channels 0/1`, `AnalogIn 0 -> VMX channel 22`. `/opt/halsim_vmx`와 `~/halsim_vmx-build`는 이번 프로그램이 쓰지 않는다(rpath에서 뺐다).
+- [x] 프로젝트 안의 `lib library: ...`로 링크한 라이브러리는 GradleRIO가 자동으로 같이 올린다. 링크하지 않는 확장(`libhalsim_vmx`)은 실행 파일이 함께 링크해야 올라간다.
+- 발견: `environment.put(key, "${...}")`처럼 Groovy GString을 넣으면 `robotCommand` 생성이 `ClassCastException`으로 실패했다 -> GradleRIO를 고침(Java/C++ 양쪽, 테스트 추가).
+- `tools/build_on_robot.sh`는 이제 PC 교차 빌드가 안 될 때의 대안이다. Java 프로젝트는 아직 이 방법이 없다(확장을 만들어 줄 곳이 없음).
+- [ ] 아직 안 한 것: Maven에 올리기(이 방식은 `allwpilib` 소스 경로를 프로젝트가 직접 가리킨다), Java 프로젝트.
+
 ### 6e. 기존 확인 항목
 
 최소 Java 로봇 프로젝트(또는 PC에서 `./gradlew deploy`한 결과)로 확인한다. 수동 실행 예(명령 미검증):
