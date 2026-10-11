@@ -348,6 +348,16 @@ Titan은 `Enable(true)` 전에는 명령을 무시하고, 200 ms 동안 CAN 메�
 - [x] `HALSIM_EXTENSIONS`/`HALSIMVMX_*` 환경변수가 `robotCommand`에 들어 있다
 - [x] (C++) `WPILibNativeArtifact`로 C++ 로봇 프로그램도 올라간다 — **지금까지 실제 빌드로 쓴 적 없음** (2026-10-11, `GradleRIO/examples/vmx-cpp`)
 
+### 네트워크와 deploy 주소 (2026-10-11, 실기기)
+
+- [x] `setupHotspot`으로 Wi-Fi AP가 뜨고 PC가 DHCP(`10.12.34.X`)를 받아 `10.TE.AM.2`로 SSH가 된다
+- [x] 5GHz(채널 36)로 바꾸고 SSID 접두사를 바꿨다(`WorldSkills-1234`). SSH 세션 안에서 실행해도 로봇이 3초 뒤 `systemd-run`으로 직접 적용한다
+- [x] 같은 이름 프로필이 둘이면 NetworkManager가 옛것을 켠다 → UUID로 켜고 옛 프로필을 지운다
+- [x] 비표준 5GHz 채널(34)을 고르면 AP가 안 뜬다 → 표준 채널만 허용, 기본 36
+- [x] `./gradlew deploy` 하나로 성공(SDK 자동 가져오기, 팀 번호 주소 `10.12.34.2`)
+- **PC의 Wi-Fi 절전(`Power save: on`)이 켜져 있으면** TCP 첫 응답(SSH 배너)이 1~10초 늦거나 시간 초과가 나서 deploy 발견이 실패했다. `iw dev <if> set power_save off`로 해결. 우리 코드는 접속 제한을 30초로 늘리고 SDK 가져오기는 3라운드 재시도한다.
+- [ ] 미확인: 유선(`172.22.11.2`) 경로, 폰 테더링 인터넷(로봇이 인터넷에 못 나갔음), `install.sh --network`로 새 로봇 전환, CPU 최대 성능 서비스 재부팅 후 유지
+
 ## 결과 기록표
 
 | 항목 | 결과 | 비고 |
