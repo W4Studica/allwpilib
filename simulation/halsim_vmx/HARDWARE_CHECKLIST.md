@@ -25,7 +25,7 @@ java -version 2>&1 | head -1             # 없으면 "없음"
 python3 --version
 ```
 
-- [ ] OS, 커널, Pi 모델, glibc, g++, java, python을 기록했다.
+- [x] OS, 커널, Pi 모델, glibc, g++, java, python을 기록했다. (위 환경 절 참고: Ubuntu 26.04.1, 커널 7.0.0-1020-raspi, Pi 4 Rev 1.5, glibc 2.43, g++ 15.2, Java 25, Python 3.14)
 
 **이미 확인된 값(2026-10-10, 개발용 VMX 한 대, SSH 로그인 출력에서):** Ubuntu 26.04.1 LTS, 커널 `7.0.0-1020-raspi`(aarch64),
 glibc 2.43, OpenJDK 25.0.4.1(`openjdk-25-jre-headless`), `vmxpi-hal_1.0~20240704` 설치 성공.
@@ -115,13 +115,13 @@ sudo ./two_vmx
 2. `studica_driver::DIO`로 출력 핀을 토글하고, 어느 물리 핀이 반응하는지 기록한다(VMX-pi 핀맵 문서와 대조).
 3. 같은 방법으로 입력, 아날로그, 엔코더용 핀을 확인한다.
 
-- [ ] `VMXChannelIndex` ↔ 물리 핀 대응표를 만들었다 → `DESIGN.md` §4 표에 채운다
-- [ ] 커널/OS 버전에 따라 번호가 어긋나는지 확인했다. 어긋난다면: 어느 버전부터 ____, 얼마 ____
+- [ ] `VMXChannelIndex` ↔ 물리 핀 대응표를 만들었다 → `DESIGN.md` §4 표에 채운다 -> 보류: 채널 번호는 `DESIGN.md` §4(`vmx_channels` 측정)로 정했고, 보드에 인쇄된 핀 번호와의 표는 아직 없다
+- [ ] 커널/OS 버전에 따라 번호가 어긋나는지 확인했다. 어긋난다면: 어느 버전부터 ____, 얼마 ____ -> 이 이미지(커널 7.0)에서는 오프셋 없이 DIO 루프백이 동작했다. OS 이미지를 고정하므로 더 확인하지 않는다
   - **결과(2026-10-10, 커널 7.0.0-1020-raspi):** HAL을 열 때 `RPI GPIO Interrupt Enable:  PI_BAD_ISR_INIT.`가 3번 나온다. 원인 확인: **`/sys/class/gpio`가 없고 `# CONFIG_GPIO_SYSFS is not set`** 이다. pigpio의 GPIO 인터럽트는 sysfs GPIO를 쓰므로 **이 커널에서는 구조적으로 초기화할 수 없다.** 사용자가 기억하던 "핀 번호에서 뺄 오프셋"은 sysfs가 아직 켜져 있던 커널(6.6 부근)의 이야기로 보이며, 이 커널에서는 오프셋이 아니라 인터럽트 기능 부재가 문제다. **핀 읽기/쓰기에 오프셋이 필요한지는 아직 모른다**(아래 핀 토글 테스트로 확인).
   - 확인: `ls /sys/class/gpio; for c in /sys/class/gpio/gpiochip*; do echo $c $(cat $c/base) $(cat $c/ngpio) $(cat $c/label); done; grep GPIO_SYSFS /boot/config-$(uname -r)`
   - 영향: 인터럽트를 쓰는 기능(`studica_driver::DIO::EnableInterrupt` 등). 우리 `halsim_vmx`의 DIO/Analog/Encoder/IMU는 인터럽트를 쓰지 않는다(폴링).
   - **해결(Robot-Manager 레포의 `gpio_isr_shim/`):** `LD_PRELOAD`로 `gpioSetISRFunc*`를 GPIO 문자 장치 기반으로 대체했다. 로봇에서 `PI_BAD_ISR_INIT`이 사라졌고, HAL이 GPIO 13/6/12(모두 하강 에지)를 요청하며 GPIO 12에서 50 Hz(약 20 ms 간격)로 에지가 도착하는 것을 확인했다. shim을 켜고 끝까지 실행하면 정상 종료(코드 0)하고 쓰기 CRC 불일치 0, 실패 0이다.
-- [ ] 오프셋이 있으면 `robot_manager`의 `config.json` 프로필(`kernel_regex`)에 `HALSIMVMX_DIO_MAP` 등으로 적었다
+- [ ] 오프셋이 있으면 `robot_manager`의 `config.json` 프로필(`kernel_regex`)에 `HALSIMVMX_DIO_MAP` 등으로 적었다 -> 해당 없음(위와 같은 이유)
 
 **기대**: 대응표가 안정적이다. **오프셋이 없으면** 프로필 기능은 필요 없는 것이다(그러면 `robot_manager`는 systemd 유닛 하나로 대체할 수 있다).
 
@@ -169,7 +169,7 @@ g++ -std=c++20 -shared -fPIC -O2 \
   - 필요한 최대 **`GLIBC_2.34`**, **`GLIBCXX_3.4.31`**. 툴체인 glibc(2.41)보다 훨씬 낮다. 로봇 glibc 2.43은 충분하다. (Ubuntu 22.04는 glibc는 되지만 libstdc++이 GCC 12라 `GLIBCXX_3.4.31`에서 걸린다.)
   - 의존: `libwpiutil`, `libntcore`, `libdatalog`, `libwpinet`(다른 zip), 시스템의 `libatomic.so.1`, `libstdc++`, `libm`, `libgcc_s`, `libc`.
   - 다른 라이브러리(`wpiutil`, `ntcore`, `wpimath` 등)와 `libatomic1` 설치 여부는 아직 확인 안 함.
-- [ ] 로봇에서 `ldd`로 `not found` 없음 (위 라이브러리를 로봇으로 옮겨서 확인)
+- [x] 로봇에서 `ldd`로 `not found` 없음 (위 라이브러리를 로봇으로 옮겨서 확인) (2026-10-11: 같은 라이브러리로 실제 프로그램이 돌았다)
 - [x] 필요한 최대 GLIBC 버전 2.34 ≤ 이 OS의 glibc 2.43
 - [x] 필요한 최대 GLIBCXX 버전 3.4.31 ≤ 이 OS의 libstdc++ (GCC 15, 로봇의 `libstdc++.so.6`에서 `strings ... | grep GLIBCXX`로 재확인 권장)
 
@@ -216,26 +216,20 @@ sudo ~/halsim_vmx-build/dio_probe 10 11
 ```
 `loopback OK`면 배선과 채널 번호는 정상이므로 확장 쪽을 본다. 실패하면 배선/채널 번호 문제다(`input before driving anything: 1`이면 입력이 어디에도 연결 안 된 것).
 
-### 6d. `robot_manager`의 종료 순서를 실제 HAL 프로세스로 시험 (`hal_hold`)
+### 6d. `robot_manager`의 종료 순서를 실제 HAL 프로세스로 시험
 
-`hal_hold`는 sim HAL을 초기화하고(확장 로드) 대기만 한다. `robotCommand`로 돌린 뒤 서비스를 멈춰서 `SIGTERM` -> HAL 종료 -> `gpioTerminate`가 정말 빠르게 끝나는지 본다.
-
-```bash
-printf 'env LD_LIBRARY_PATH=/home/ubuntu/wpilib-libs HALSIM_EXTENSIONS=/home/ubuntu/halsim_vmx-build/libhalsim_vmx.so HALSIMVMX_BACKEND=/opt/halsim_vmx/libhalsim_vmx_studica.so /home/ubuntu/halsim_vmx-build/hal_hold\n' > ~/robotCommand
-sleep 8; sudo systemctl stop robot_manager; sudo journalctl -u robot_manager -n 25 --no-pager | grep -E 'robot program|stopping|SIGKILL|started'
-rm ~/robotCommand; sudo systemctl start robot_manager
-```
-기대: `stopping robot program ...` 다음에 `robot program stopped after 0.x s`(`SIGKILL` 없음). `sending SIGKILL`이 나오면 HAL이 `SIGTERM`으로 안 끝난다는 뜻이다(미확인).
+sim HAL을 초기화하고(확장 로드) 대기만 하는 작은 시험 프로그램을 `robotCommand`로 돌린 뒤 서비스를 멈춰서 종료 순서가 빠르게 끝나는지 봤다(시험 프로그램은 지웠다. 같은 시험은 아무 로봇 프로그램으로 `sudo systemctl stop robot_manager`를 하면 된다).
+기대: `stopping robot program ...` 다음에 `robot program stopped by SIGINT after 0.x s`(`sending SIGKILL` 없음).
 
 **첫 실측(2026-10-10) — 두 가지 문제가 나왔다:**
-1. **`robot_manager`가 자식을 정리하기 전에 종료했다.** systemd 로그 `State 'final-sigterm' timed out. Killing.` / `Killing process ... (hal_hold) with signal SIGKILL`: `robot_manager`가 이미 끝난 뒤에 남은 `hal_hold`를 systemd가 15초 뒤 `SIGKILL`했다.
+1. **`robot_manager`가 자식을 정리하기 전에 종료했다.** systemd 로그 `State 'final-sigterm' timed out. Killing.` / `Killing process ... (시험 프로그램) with signal SIGKILL`: `robot_manager`가 이미 끝난 뒤에 남은 시험 프로그램을 systemd가 15초 뒤 `SIGKILL`했다.
    원인: 시그널 핸들러가 `stop()`을 데몬 스레드로 돌리는데, 리더가 끝나면 메인의 `run()`이 먼저 돌아와 인터프리터가 종료되면서 그룹 정리(유예 후 `SIGKILL`)가 끊겼다. 단위 테스트는 `stop()`을 직접 호출해서 놓쳤다.
    **수정:** 종료 스레드를 메인이 `join`한다. 이 상황을 재현하는 테스트(`test_the_service_finishes_stopping_the_program_before_it_exits`)를 먼저 만들어 실패하는 것을 확인한 뒤 고쳤다(PC). 로봇 재확인은 아직.
-2. **HAL은 `SIGTERM`에서 정리만 하고 프로세스를 끝내지 않는 것으로 보인다.** `kill -TERM`을 보낸 `hal_hold`가 13.7초 뒤에도 살아 있었고, 로그는 `VMX HAL:  SIGTERM signal received.` -> `closing pigpio library to release VMX resources.` -> `pigpio library closed and VMX resources released.` -> `At VMXPi::Terminate` -> `Stopped RemoteServer` -> `spiClose: pigpio uninitialised` / `Error closing SPI AUX Channel 2.`에서 끝난다
+2. **HAL은 `SIGTERM`에서 정리만 하고 프로세스를 끝내지 않는 것으로 보인다.** `kill -TERM`을 보낸 시험 프로그램이 13.7초 뒤에도 살아 있었고, 로그는 `VMX HAL:  SIGTERM signal received.` -> `closing pigpio library to release VMX resources.` -> `pigpio library closed and VMX resources released.` -> `At VMXPi::Terminate` -> `Stopped RemoteServer` -> `spiClose: pigpio uninitialised` / `Error closing SPI AUX Channel 2.`에서 끝난다
    (`Ctrl-C`/SIGINT에서는 `Exiting VMX-pi HAL application ... [normal exit]`가 나왔다). 핸들러가 VMX 자원을 정리하고 돌아오기만 하는지는 `gdb`로 확인 예정(**가설, 미확인**). 사실이면 `robot_manager`의 `SIGTERM`은 매번 `stop_grace_seconds`를 다 기다린 뒤 `SIGKILL`로 끝난다(VMX 자원은 이미 정리된 상태).
-   **확인됨(2026-10-10):** `gdb`로 `SIGTERM` 3초 뒤 스레드를 보니 메인 스레드는 `hal_hold`의 `main()` 안 `nanosleep`(대기 루프)에 그대로 있고 pigpio 스레드 3개는 사라졌다 = HAL의 `SIGTERM` 핸들러는 VMX/pigpio를 정리하고 **돌아오기만 한다.**
+   **확인됨(2026-10-10):** `gdb`로 `SIGTERM` 3초 뒤 스레드를 보니 메인 스레드는 시험 프로그램의 `main()` 안 `nanosleep`(대기 루프)에 그대로 있고 pigpio 스레드 3개는 사라졌다 = HAL의 `SIGTERM` 핸들러는 VMX/pigpio를 정리하고 **돌아오기만 한다.**
    **`SIGINT`는 0.21초 만에 깨끗하게 종료**한다(`Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit]`; 이때 찍히는 `Signal 2 received by PIGPIOClient::signal_func()`와 스택 출력은 HAL의 정상 출력이다).
-   **조치:** `robot_manager`가 `SIGINT` -> `SIGTERM` -> `SIGKILL` 순서로 멈춘다(설정 `stop_signals`). PC에서 신호 순서/폴백/설정 파싱을 테스트했다(39개). **서비스로 돌린 `hal_hold`가 실제로 `stopped by SIGINT after 0.x s`로 끝나는지는 로봇에서 재확인 필요.**
+   **조치:** `robot_manager`가 `SIGINT` -> `SIGTERM` -> `SIGKILL` 순서로 멈춘다(설정 `stop_signals`). PC에서 신호 순서/폴백/설정 파싱을 테스트했다(39개). **서비스로 돌린 시험 프로그램이 `stopped by SIGINT after 0.x s`로 끝나는지는 아래 "로봇 확인됨"에서 확인했다.**
    **로봇 확인됨(2026-10-10, `d31287e`):** `stopping robot program (pid ...): SIGINT then SIGTERM, then SIGKILL; 5s in total` -> `robot program stopped by SIGINT after 0.2s`. `sending SIGKILL`, systemd의 `Killing process`/`final-sigterm`은 없었다. 위 문제 1(그룹 정리 전 종료)과 2(SIGTERM 무반응) 모두 해결.
    참고: 옛 Studica GradleRIO 포크는 `frcKillRobot.sh -t`(재시작은 `-t -r`)로 멈추고 `/home/lvuser/robotCommand`에 명령을 쓴다. 그 스크립트가 보내는 신호는 소스로 확인하지 못했다(VMX 이미지 안에 있음).
 
@@ -270,8 +264,8 @@ sudo HALSIM_EXTENSIONS="/경로/libhalsim_vmx.so" \
 ```
 
 로그에서 확인한다.
-- [ ] `HALSim VMX: using backend /경로/libhalsim_vmx_studica.so`
-- [ ] `HALSim VMX Extension Initialized`
+- [x] `HALSim VMX: using backend /경로/libhalsim_vmx_studica.so`
+- [x] `HALSim VMX Extension Initialized`
 - [ ] 백엔드를 **일부러 틀리게** 지정하면(`HALSIMVMX_BACKEND=/없는/경로`) 로봇 프로그램이 확장 초기화 오류를 내고, loopback으로 조용히 넘어가지 **않는다**
 
 장치별로 확인한다(§3의 채널표 사용). 각각 **WPILib 표준 클래스**로 읽고 쓴다.
@@ -280,12 +274,12 @@ sudo HALSIM_EXTENSIONS="/경로/libhalsim_vmx.so" \
 |---|---|---|---|
 | DigitalOutput | `set(true/false)`를 번갈아, 멀티미터/LED로 확인 | 핀이 토글된다 | |
 | DigitalInput | 점퍼로 HIGH/LOW를 줌 | `get()`이 따라간다 | |
-| AnalogInput | 가변저항/알려진 전압을 줌 | `getVoltage()`가 실제 전압과 일치한다 | **확인됨(2026-10-10, `hal_analog_test 0 10`, `HALSIMVMX_ANALOG_MAP="0:22"`):** 핀 22에 5V를 연결 -> `4.996 V`(40회 모두 동일). 클레임 로그 `AnalogIn 0 -> VMX channel 22`, 읽기 52,099회 CRC 불일치/실패 0. GND/3.3V 구간은 측정 안 함(0~5V 범위 가정, 스케일은 5V 한 점으로만 확인) |
+| AnalogInput | 가변저항/알려진 전압을 줌 | `getVoltage()`가 실제 전압과 일치한다 | **확인됨(2026-10-10, C++ 시험 프로그램, `HALSIMVMX_ANALOG_MAP="0:22"`):** 핀 22에 5V를 연결 -> `4.996 V`(40회 모두 동일). 클레임 로그 `AnalogIn 0 -> VMX channel 22`, 읽기 52,099회 CRC 불일치/실패 0. GND/3.3V 구간은 측정 안 함(0~5V 범위 가정, 스케일은 5V 한 점으로만 확인) |
 | Encoder | 손으로 돌림 | `get()`이 증가/감소, `reset()` 후 0, `setReverseDirection(true)`이면 부호가 반대 | **부분 확인됨(2026-10-11, C++ `vmx-cpp-test`를 `./gradlew deploy`로 올려 실행, `HALSIMVMX_DIO_MAP="0:0,1:1"`, FlexDIO 0/1):** 모터가 도는 동안 `wpi::Encoder::Get()`이 0.25초에 약 120씩 증가(0 -> 2492), 모터가 멈추면 값이 그대로. **reset과 `SetReverseDirection`도 확인됨(2026-10-11, 엔코더를 VMX FlexDIO 0/1에 연결, 모터 0.2):** `Reset()`하면 1388 -> 17로 돌아가 다시 증가, `SetReverseDirection(true)` 뒤에는 같은 회전 방향인데 카운트가 감소(`-1626`, `-1752`, ...)하고 방향 비트가 0이 된다. 도중에 바꾸면 현재 카운트의 부호도 같이 뒤집힌다(+1505 -> -1626). 해제하면 +4162로 돌아옴 |
 | IMU(navX) | §7 참고 | | |
 
-- [ ] DIO 출력/입력, AnalogInput, Encoder가 동작한다
-- [ ] Encoder A/B를 `Encoder(a,b)`로 만들었을 때 같은 채널의 `DigitalInput`과 충돌 오류가 **없다**(엔코더가 채널을 가져간다는 가정을 확인)
+- [x] DIO 출력/입력, AnalogInput, Encoder가 동작한다 (2026-10-11, C++ 프로그램을 deploy해서 확인)
+- [x] Encoder A/B를 `Encoder(a,b)`로 만들었을 때 같은 채널의 `DigitalInput`과 충돌 오류가 **없다**(엔코더가 채널을 가져간다는 가정을 확인) (Encoder(0,1)와 `HALSIMVMX_DIO_MAP="0:0,1:1"`로 충돌 없이 동작)
 
 ## 7. IMU 부호와 Titan 안전
 
@@ -341,18 +335,18 @@ Titan은 `Enable(true)` 전에는 명령을 무시하고, 200 ms 동안 CAN 메�
 - [ ] `sudo systemctl stop robot_manager`가 로봇 프로세스 트리까지 정리한다(`pgrep -af robotCommand`/자식 확인)
 - [x] 로봇 프로그램이 **root로** 실행된다 (로봇에서 확인: `user=root`)
 - [x] `config.json`의 `env`가 로봇 프로세스에 들어간다 (로봇에서 확인: `LD_PRELOAD=/opt/robot_manager/lib/libvmx_gpio_isr_shim.so`)
-- [ ] 플랫폼 프로필: `kernel_regex`가 `uname -r`과 일치하면 프로필의 환경변수가 들어간다 (프로필 `env`는 같은 코드 경로이나 아직 프로필 자체는 비어 있어 시험 안 함)
+- [ ] 플랫폼 프로필: `kernel_regex`가 `uname -r`과 일치하면 프로필의 환경변수가 들어간다 (프로필 `env`는 같은 코드 경로이나 아직 프로필 자체는 비어 있어 시험 안 함) -> 시험하지 않는다: OS 이미지를 고정하므로 커널별 프로필이 필요 없다. 기능은 남겨 둔다
 
 ### GradleRIO `./gradlew deploy` (PC에서)
 
 `GradleRIO/VMX.md`의 예시 `build.gradle`을 쓴다. `username`/`password`/주소는 직접 넣는다(기본값 없음).
 
-- [ ] SSH 접속과 `sudo systemctl`/`sudo ldconfig`가 **비밀번호 없이** 된다(sudoers)
-- [ ] `./gradlew deploy`가 끝까지 성공한다
-- [ ] VMX에 `classpath/`, `third-party/lib/`, `robotCommand`, `robotCommand.args`가 올라간다
-- [ ] 서비스가 stop → 파일 업로드 → start 순서로 재시작되고 새 프로그램이 돈다
-- [ ] `HALSIM_EXTENSIONS`/`HALSIMVMX_*` 환경변수가 `robotCommand`에 들어 있다
-- [ ] (C++) `WPILibNativeArtifact`로 C++ 로봇 프로그램도 올라간다 — **지금까지 실제 빌드로 쓴 적 없음**
+- [x] SSH 접속과 `sudo systemctl`/`sudo ldconfig`가 **비밀번호 없이** 된다(sudoers) (deploy가 `sudo systemctl`/`ldconfig`를 비밀번호 없이 실행함. `install.sh --sudoers`)
+- [x] `./gradlew deploy`가 끝까지 성공한다
+- [x] VMX에 `classpath/`, `third-party/lib/`, `robotCommand`, `robotCommand.args`가 올라간다
+- [x] 서비스가 stop → 파일 업로드 → start 순서로 재시작되고 새 프로그램이 돈다
+- [x] `HALSIM_EXTENSIONS`/`HALSIMVMX_*` 환경변수가 `robotCommand`에 들어 있다
+- [x] (C++) `WPILibNativeArtifact`로 C++ 로봇 프로그램도 올라간다 — **지금까지 실제 빌드로 쓴 적 없음** (2026-10-11, `GradleRIO/examples/vmx-cpp`)
 
 ## 결과 기록표
 

@@ -11,10 +11,6 @@
 #   libhalsim_vmx.so   the HALSIM extension (HALSIM_EXTENSIONS)
 #   hal_dio_test       drives WPILib DIO through the sim HAL
 #   vmx_channels       prints the VMX channel map
-#   hal_analog_test    reads a WPILib AnalogInput through the sim HAL
-#   hal_encoder_test   reads a WPILib Encoder through the sim HAL
-#   hal_titan_test     TitanEnableGuard on a real Titan (needs the Studica plugin; wheels off the ground)
-#   hal_hold           initializes the sim HAL and waits (to try robot_manager's stop sequence)
 #   dio_probe          loopback test of two VMX channels with the Studica DIO class (no HAL, no extension)
 # Libraries (default ~/wpilib-libs): libwpiHal.so, libwpiutil.so, libntcore.so, libdatalog.so, libwpinet.so
 #
@@ -102,14 +98,6 @@ run g++ -std=c++20 -shared -fPIC -O2 -Wall -Wextra "${INC[@]}" -I"$EXT_DIR/src/m
 info "hal_dio_test"
 run g++ -std=c++20 -O2 -Wall -Wextra "${INC[@]}" "$EXT_DIR/tools/hal_dio_test.cpp" "${LINK[@]}" -lpthread -o "$OUT_DIR/hal_dio_test"
 
-info "hal_analog_test and hal_encoder_test"
-for t in hal_analog_test hal_encoder_test; do
-  run g++ -std=c++20 -O2 -Wall -Wextra "${INC[@]}" "$EXT_DIR/tools/$t.cpp" "${LINK[@]}" -lpthread -o "$OUT_DIR/$t"
-done
-
-info "hal_hold"
-run g++ -std=c++20 -O2 -Wall -Wextra "${INC[@]}" "$EXT_DIR/tools/hal_hold.cpp" "${LINK[@]}" -lpthread -o "$OUT_DIR/hal_hold"
-
 info "vmx_channels and dio_probe (need VMXPi.h)"
 if [ -f /usr/local/include/vmxpi/VMXPi.h ]; then
   run g++ -std=c++17 -O2 -Wall -Wextra -I/usr/local/include/vmxpi "$EXT_DIR/tools/vmx_channels.cpp" \
@@ -117,16 +105,6 @@ if [ -f /usr/local/include/vmxpi/VMXPi.h ]; then
   run g++ -std=c++17 -O2 -Wall -Wextra -I/usr/local/include/vmxpi -I"$AW_DIR/studica_drivers" \
     "$EXT_DIR/tools/dio_probe.cpp" "$AW_DIR/studica_drivers/dio.cpp" \
     -L/usr/local/lib/vmxpi -lvmxpi_hal_cpp -lrt -lpthread -latomic -o "$OUT_DIR/dio_probe"
-  if [ -f /opt/halsim_vmx/libhalsim_vmx_studica.so ]; then
-    # Linked against the plugin by path so SharedVMX() is the same VMXPi halsim_vmx uses.
-    run g++ -std=c++20 -O2 -Wall -Wextra "${INC[@]}" -I/usr/local/include/vmxpi -I"$AW_DIR/studica_drivers" \
-      -I"$EXT_DIR/src/main/native/include" -I"$EXT_DIR/src/studica/native/include" \
-      "$EXT_DIR/tools/hal_titan_test.cpp" "$AW_DIR/studica_drivers/titan.cpp" \
-      /opt/halsim_vmx/libhalsim_vmx_studica.so "${LINK[@]}" -L/usr/local/lib/vmxpi -lvmxpi_hal_cpp \
-      -Wl,-rpath,/usr/local/lib/vmxpi -lrt -lpthread -latomic -o "$OUT_DIR/hal_titan_test"
-  else
-    echo "  hal_titan_test skipped: /opt/halsim_vmx/libhalsim_vmx_studica.so not installed"
-  fi
 else
   echo "  skipped: /usr/local/include/vmxpi/VMXPi.h not found"
 fi
