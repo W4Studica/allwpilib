@@ -1,83 +1,80 @@
-# VMX 실기기 검증 체크리스트
+# VMX Hardware Verification Checklist
 
-PC에서는 `halsim_vmx` 테스트 35개, `GradleRIO` 테스트, `robot_manager` 테스트 13개가 통과했다. **VMX 실기기에서는 아무것도 확인되지 않았다.**
-이 문서는 실기기에서 확인할 것을 순서대로 적은 것이다. 각 단계는 *무엇을 하는지 / 기대 결과 / 실패하면*으로 되어 있다.
+On PC, 35 `halsim_vmx` tests, the `GradleRIO` tests, and 13 `robot_manager` tests passed. **Nothing had yet been verified on physical VMX hardware when this checklist was started.**
+This document lists the hardware checks in order. Each step describes what to do, the expected result, and what to do if it fails.
 
-- `[ ]`에 체크하고, 마지막의 **결과 기록표**를 채운다.
-- "(명령 미검증)"은 이 문서를 쓴 사람이 실행해 보지 못한 명령이다. 그대로 되지 않으면 고쳐서 이 문서에 반영한다.
-- **모터가 있는 테스트(§6, §7)는 바퀴가 바닥에 닿지 않게 로봇을 띄우고, 낮은 속도로 시작하고, 전원을 바로 끌 수 있는 상태에서 한다.**
+- Check `[ ]` items as they are completed and fill in the **Results table** at the end.
+- "Untested command" means the author has not run it. If it does not work as written, fix the command and update this document.
+- **For tests involving motors (§6 and §7), raise the robot so its wheels cannot touch the floor, start at low speed, and keep a way to cut power immediately.**
 
-의존 관계: §0 → §1 → (§2, §3, §4 병행 가능) → §5 → §6 → §7 → §8. 앞 단계가 실패하면 그 뒤는 의미가 없다.
+Dependencies: §0 → §1 → (§2, §3, and §4 can run in parallel) → §5 → §6 → §7 → §8. Later steps are not meaningful if an earlier prerequisite fails.
 
 ---
 
-## 0. 환경 기록
+## 0. Record the environment
 
-실행 결과를 결과 기록표에 적는다.
+Write the command output in the Results table.
 
 ```bash
 cat /etc/os-release | head -4
 uname -r
-cat /proc/device-tree/model; echo        # Raspberry Pi 모델
+cat /proc/device-tree/model; echo        # Raspberry Pi model
 ldd --version | head -1                  # glibc
-g++ --version | head -1                  # 없으면 "없음"
-java -version 2>&1 | head -1             # 없으면 "없음"
+g++ --version | head -1                  # record "not installed" if absent
+java -version 2>&1 | head -1             # record "not installed" if absent
 python3 --version
 ```
 
-- [x] OS, 커널, Pi 모델, glibc, g++, java, python을 기록했다. (위 환경 절 참고: Ubuntu 26.04.1, 커널 7.0.0-1020-raspi, Pi 4 Rev 1.5, glibc 2.43, g++ 15.2, Java 25, Python 3.14)
+- [x] Recorded OS, kernel, Pi model, glibc, g++, Java, and Python. (Environment above: Ubuntu 26.04.1, kernel 7.0.0-1020-raspi, Pi 4 Rev 1.5, glibc 2.43, g++ 15.2, Java 25, Python 3.14.)
 
-**이미 확인된 값(2026-10-10, 개발용 VMX 한 대, SSH 로그인 출력에서):** Ubuntu 26.04.1 LTS, 커널 `7.0.0-1020-raspi`(aarch64),
-glibc 2.43, OpenJDK 25.0.4.1(`openjdk-25-jre-headless`), `vmxpi-hal_1.0~20240704` 설치 성공.
-같은 로봇에서 추가로 확인됨: **Raspberry Pi 4 Model B Rev 1.5**, Python 3.14.4, **g++ 없음**, **`/usr/local/include/vmxpi` 없음(헤더 없음)**,
-`libvmxpi_hal_cpp.so`의 의존 라이브러리(`libstdc++`, `libgcc_s`, `libc`, `libm`, `ld-linux`)가 **모두 해석됨**(`ldd`에 `not found` 없음).
-디바이스: `/dev/mem`(root:kmem 0640), `/dev/gpiomem`(root 0600), `/dev/i2c-1`(dialout), `/dev/spidev0.0`/`0.1`(dialout) 존재.
-커널 설정: `CONFIG_DEVMEM=y`, `CONFIG_STRICT_DEVMEM=y`, `IO_STRICT_DEVMEM` 꺼짐 — 주변장치 레지스터 접근은 막히지 않을 가능성이 있으나 **실행해서 확인해야 한다**(root로 실행).
-커널이 6.6보다 훨씬 새로워서, 핀 번호 오프셋(§3)이 실제로 생길 가능성이 있다.
-**g++가 없으므로 §4(플러그인 빌드) 전에 `sudo apt install -y g++ make`가 필요하다. `VMXPi.h`는 여전히 구해야 한다.**
+**Values already confirmed (2026-10-10, one development VMX, from SSH login output):** Ubuntu 26.04.1 LTS, kernel `7.0.0-1020-raspi` (aarch64), glibc 2.43, OpenJDK 25.0.4.1 (`openjdk-25-jre-headless`), and successful installation of `vmxpi-hal_1.0~20240704`.
+Also confirmed on the same robot: **Raspberry Pi 4 Model B Rev 1.5**, Python 3.14.4, **g++ not installed**, **`/usr/local/include/vmxpi` missing (no headers)**, and all dependencies of `libvmxpi_hal_cpp.so` (`libstdc++`, `libgcc_s`, `libc`, `libm`, `ld-linux`) resolve (**no `not found` from `ldd`**).
+Devices present: `/dev/mem` (root:kmem 0640), `/dev/gpiomem` (root 0600), `/dev/i2c-1` (dialout), and `/dev/spidev0.0` / `0.1` (dialout).
+Kernel configuration: `CONFIG_DEVMEM=y`, `CONFIG_STRICT_DEVMEM=y`, and `IO_STRICT_DEVMEM` disabled. Peripheral register access may be allowed, but **this must be verified by running it as root**.
+The kernel is much newer than 6.6, so a pin-number offset (§3) may be present.
+**Because g++ is missing, run `sudo apt install -y g++ make` before §4 (plugin build). `VMXPi.h` must still be obtained.**
 
-참고(이 PC에서 확인한 사실): WPILib 2027의 arm64 툴체인은 `aarch64-trixie-linux-gnu`(Debian 13, GCC 14.3, glibc 2.41)뿐이다.
-Studica 문서상 VMX 공식 이미지는 Ubuntu 22.04(glibc 2.35)이다.
+Reference (confirmed on this PC): WPILib 2027 provides only the `aarch64-trixie-linux-gnu` arm64 toolchain (Debian 13, GCC 14.3, glibc 2.41).
+Studica documentation says the official VMX image uses Ubuntu 22.04 (glibc 2.35).
 
-## 1. Studica 기본 스택이 이 OS에서 동작하는가
+## 1. Does the base Studica stack work on this OS?
 
-이게 안 되면 나머지는 의미가 없다. 이 OS에서 `vmxpi_hal_cpp`/`pigpio`가 도는지가 OS 선택(22.04 vs 26.04 vs Debian 13)을 가른다.
+If this fails, nothing else matters. Whether `vmxpi_hal_cpp` / `pigpio` work on this OS determines the OS choice (22.04 vs 26.04 vs Debian 13).
 
-1. `vmxpi_hal_cpp`가 설치돼 있는지 확인한다: `ls /usr/local/include/vmxpi/VMXPi.h /usr/local/lib/vmxpi/`
-   (공식 이미지에는 미리 설치돼 있다고 Studica ROS2 README에 적혀 있다. 다른 OS면 설치 방법은 Studica 문서를 확인한다.)
+1. Check whether `vmxpi_hal_cpp` is installed: `ls /usr/local/include/vmxpi/VMXPi.h /usr/local/lib/vmxpi/`
+   (Studica's ROS2 README says it is preinstalled on the official image. For other OSes, follow Studica's installation documentation.)
 
-   > **`vmxpi-hal_1.0~20240704_arm64.deb`(프로젝트 루트에 있던 비공식 재패키징, 공식 Ubuntu 22.04 ROS2 Humble 이미지에서 추출)를 읽기만 해서 확인한 것:**
-   > - 라이브러리(`/usr/local/lib/vmxpi/libvmxpi_hal_cpp.so` 등)만 들어 있고 **`VMXPi.h` 헤더는 없다.** 이 deb만으로는 `studica_drivers`/플러그인을 컴파일할 수 없다. 헤더는 공식 이미지의 `/usr/local/include/vmxpi/`에서 가져와야 한다.
-   > - `libvmxpi_hal_cpp.so`가 필요로 하는 것: 최대 `GLIBC_2.34`, `GLIBCXX_3.4.29`, 외부 라이브러리는 `libstdc++`/`libgcc_s`/`libc`뿐. 상위 호환이라 22.04보다 새로운 OS에서도 로드될 가능성이 높다(실행해 본 것은 아님).
-   > - pigpio는 별도 `.so`가 아니라 라이브러리 안에 들어 있는 것으로 보인다(`PIGPIOClient` 심볼). 동작 방식은 모른다.
+   > **Inspection only (not execution) of `vmxpi-hal_1.0~20240704_arm64.deb` (an unofficial repackaging found in the project root, extracted from the official Ubuntu 22.04 ROS2 Humble image):**
+   > - It contains only libraries (such as `/usr/local/lib/vmxpi/libvmxpi_hal_cpp.so`), **not the `VMXPi.h` header**. This deb alone cannot compile `studica_drivers` or the plugin. Get the header from `/usr/local/include/vmxpi/` on the official image.
+   > - `libvmxpi_hal_cpp.so` requires at most `GLIBC_2.34` and `GLIBCXX_3.4.29`; its only external libraries are `libstdc++`, `libgcc_s`, and `libc`. It may load on OS versions newer than 22.04 due to backward compatibility (not tested by running it).
+   > - pigpio appears to be included in the library rather than provided as a separate `.so` (`PIGPIOClient` symbol). Its behavior is unknown.
    >
-   > **헤더가 들어 있는 두 번째 deb: `vmx-hal_1.0~20240704_arm64.deb`**(역시 비공식 재패키징, 13MB, 설명: "libraries, headers, examples and tools").
-   > - `/usr/local/include/vmxpi/VMXPi.h` 등 헤더 23개, `libvmxpi_hal_cpp.so`/`.a`, `studica_drivers` 라이브러리, 테스트 도구(`/usr/local/bin`), `/usr/local/startup/initenv.sh`(YDLIDAR udev 규칙을 만드는 스크립트일 뿐이며 설치 때 자동 실행되지 않음)가 들어 있다. 설치 스크립트는 `ldconfig`만 한다.
-   > - **`vmxpi-hal`과 같은 파일(`/usr/local/lib/vmxpi/*`)을 설치하므로 충돌한다.** 먼저 `sudo apt remove -y vmxpi-hal` 한 뒤 `sudo apt install -y ./vmx-hal_1.0~20240704_arm64.deb` 한다.
-   > - 이 PC에서 이 헤더로 컴파일해 본 결과(링크/실행 아님, x86 오브젝트): `studica_drivers`의 `.cpp` 17개 전부 컴파일 OK, 우리 `StudicaBackend.cpp`는 `-Wall -Wextra` 경고 없이 컴파일 OK.
-2. `studica_drivers`를 빌드/설치한다(Studica ROS2 README 방식):
+   > **A second deb includes the headers: `vmx-hal_1.0~20240704_arm64.deb`** (also an unofficial repackaging, 13 MB, description: "libraries, headers, examples and tools").
+   > - It contains 23 headers including `/usr/local/include/vmxpi/VMXPi.h`, `libvmxpi_hal_cpp.so` / `.a`, the `studica_drivers` library, test tools under `/usr/local/bin`, and `/usr/local/startup/initenv.sh` (only creates YDLIDAR udev rules; it is not run automatically during installation). Its installation script only runs `ldconfig`.
+   > - **It installs the same files as `vmxpi-hal` under `/usr/local/lib/vmxpi/*`, so they conflict.** First run `sudo apt remove -y vmxpi-hal`, then `sudo apt install -y ./vmx-hal_1.0~20240704_arm64.deb`.
+   > - Compile-only test on this PC using these headers (not linked or run; x86 object files): all 17 `studica_drivers` `.cpp` files compiled successfully, and our `StudicaBackend.cpp` compiled with no `-Wall -Wextra` warnings.
+2. Build and install `studica_drivers` (Studica ROS2 README procedure):
    ```bash
    cd allwpilib/studica_drivers && make && sudo make install
    ```
-3. 예제 하나를 **root로** 실행한다(`pigpio`가 root를 요구한다):
+3. Run an example **as root** (`pigpio` requires root):
    ```bash
    cd allwpilib/studica_drivers/examples/imu_example && make && sudo ./imu_example
    ```
-   Titan이 연결돼 있으면 `titan_example`도 해 본다(바퀴를 띄운 상태에서).
+   If a Titan is connected, also try `titan_example` with the wheels raised.
 
-- [x] `VMXPi.h`와 `libvmxpi_hal_cpp`가 있다 (`vmx-hal` deb, 로봇에서 확인)
-- [ ] `studica_drivers` 빌드와 설치가 된다 (deb에 옛 버전이 이미 설치돼 있음. `install.sh --upgrade-drivers`로 새 복사본 설치는 미확인)
-- [x] **HAL이 이 OS에서 하드웨어와 통신한다**: VMX 보드(모델 0x32, 하드웨어 rev 60, 펌웨어 3.0.436)와 통신 확립, navX 인식 (인스턴스 1개일 때). 예제로 값을 읽어 본 것은 아님
+- [x] `VMXPi.h` and `libvmxpi_hal_cpp` are present (`vmx-hal` deb; confirmed on the robot).
+- [ ] `studica_drivers` builds and installs (the deb already installed an older version; installing a fresh copy with `install.sh --upgrade-drivers` is unverified).
+- [x] **The HAL communicates with hardware on this OS:** established communication with VMX board (model 0x32, hardware rev 60, firmware 3.0.436) and detected navX (with one instance). Reading values with an example has not been tested.
 
-**기대**: 값이 읽히고 오류가 없다.
-**실패하면**: 로그 전체를 기록한다. `pigpio` 관련 오류면 이 OS에서 VMX HAL이 안 도는 것이다. 이 경우 OS를 22.04로 돌려야 하고, 그러면 §5의 glibc 문제를 다른 방법(호환 sysroot, 온디바이스 빌드)으로 풀어야 한다.
+**Expected:** Values are readable without errors.
+**If it fails:** Save the complete log. A `pigpio` error means the VMX HAL does not work on this OS. In that case, revert to OS 22.04 and solve the glibc issue in §5 another way (compatible sysroot or on-device build).
 
-## 2. 한 프로세스에서 `VMXPi`를 여러 개 만들면 문제가 되는가
+## 2. Do multiple `VMXPi` instances in one process cause problems?
 
-Studica 클래스 생성자의 기본 인자가 `std::make_shared<VMXPi>(true, 50)`라서, 인자 없이 쓰면 장치마다 `VMXPi`가 생긴다.
-`studica_drivers`를 수정할 수 없으므로 우리는 `wpilibvmx::SharedVMX()`를 넘기게 안내하고 있다. 이게 **실제로 필요한지** 확인한다.
+Studica class constructors default to `std::make_shared<VMXPi>(true, 50)`, so creating a device without passing an instance creates another `VMXPi`. Since `studica_drivers` cannot be modified, our guidance passes `wpilibvmx::SharedVMX()`. Verify that this is actually required.
 
-작은 프로그램을 만든다(명령 미검증):
+Create a small program (command untested):
 
 ```cpp
 // two_vmx.cpp
@@ -97,41 +94,41 @@ g++ -std=c++17 two_vmx.cpp -o two_vmx -I/usr/local/include/vmxpi -L/usr/local/li
 sudo ./two_vmx
 ```
 
-- [x] **결과(2026-10-10, 로봇 Ubuntu 26.04 / 커널 7.0): 한 프로세스에서 `VMXPi`를 둘 이상 만들면 깨진다.**
-  - 인스턴스 **2개**: 둘 다 `IsOpen: 1`이지만 SPI 쓰기가 실패한다(`Timeout waiting for comm ready HIGH during SPI transmit. Likely CRC ERROR`, `Write CRC Mismatches: 135`, `Write Failures: 45`), 이후 `Aborted read from bank 0, address 4, length 108` 재시도가 끝없이 이어지고 **Segfault(종료 코드 139)**.
-  - 인스턴스 **1개**(`vmx_n 1`): 정상. `Established communication with VMX board model 0x32, hardware rev 60, firmware version 3.0.436`, `Acquired navX-Sensor configuration`, 쓰기 19회/읽기 9172회에 CRC 불일치 0, 실패 0, 정상 종료.
-  - **결론: `SharedVMX()`는 필수다.** Studica 클래스를 인자 없이 만들면(기본 인자가 새 `VMXPi`를 만든다) 하드웨어 통신이 망가진다.
+- [x] **Result (2026-10-10, robot Ubuntu 26.04 / kernel 7.0): creating more than one `VMXPi` in a process breaks.**
+  - **Two instances:** both report `IsOpen: 1`, but SPI writes fail (`Timeout waiting for comm ready HIGH during SPI transmit. Likely CRC ERROR`, `Write CRC Mismatches: 135`, `Write Failures: 45`). Then retries of `Aborted read from bank 0, address 4, length 108` continue indefinitely and the process **segfaults (exit code 139)**.
+  - **One instance** (`vmx_n 1`): works. Logs `Established communication with VMX board model 0x32, hardware rev 60, firmware version 3.0.436` and `Acquired navX-Sensor configuration`; 19 writes and 9,172 reads, zero CRC mismatches, zero failures, normal exit.
+  - **Conclusion: `SharedVMX()` is required.** Creating Studica classes without passing it (which creates a new `VMXPi` by default) breaks hardware communication.
 
-**해석**:
-- 둘 다 `1`이고 크래시 없음 → 기본 인자 함정은 문제가 아니다. `SharedVMX()` 안내는 권고로 낮춰도 된다.
-- 두 번째가 `0`이거나 크래시 → 실제 문제다. `SharedVMX()`를 필수로 하고 문서에 강하게 적는다.
-- (참고) 다른 **프로세스**가 동시에 VMX를 열 때의 동작은 우리 구조에서는 확인이 필요 없다(WPILib은 단일 프로세스, `robot_manager`는 VMX를 열지 않는다).
+**Interpretation:**
+- Both report `1` and there is no crash → the default-argument trap is not a problem. The `SharedVMX()` guidance could be downgraded to a recommendation.
+- The second reports `0` or crashes → there is a real problem. Require `SharedVMX()` and state this prominently in the docs.
+- (Reference) Whether separate **processes** can open the VMX simultaneously does not need testing for our architecture (WPILib uses one process; `robot_manager` does not open the VMX).
 
-## 3. 핀 번호와 오프셋 (`robot_manager` 프로필에 채울 값)
+## 3. Pin numbers and offsets (values for the `robot_manager` profile)
 
-사용자 기억: OS/커널 버전에 따라 핀 번호에서 뺄 오프셋이 있다. **버전과 값은 모른다(미검증).** 측정한다.
+User recollection: an offset must be subtracted from pin numbers depending on OS/kernel version. **The versions and values are unknown (unverified).** Measure them.
 
-1. 사용할 채널마다 점퍼선으로 **출력 핀 → 입력 핀**을 연결하거나, 출력 핀에 LED/멀티미터를 연결한다.
-2. `studica_driver::DIO`로 출력 핀을 토글하고, 어느 물리 핀이 반응하는지 기록한다(VMX-pi 핀맵 문서와 대조).
-3. 같은 방법으로 입력, 아날로그, 엔코더용 핀을 확인한다.
+1. For each channel in use, connect an **output pin to an input pin** with a jumper wire, or attach an LED/multimeter to the output.
+2. Toggle the output with `studica_driver::DIO` and record which physical pin responds (compare with the VMX-pi pin map).
+3. Check input, analog, and encoder pins the same way.
 
-- [ ] `VMXChannelIndex` ↔ 물리 핀 대응표를 만들었다 → `DESIGN.md` §4 표에 채운다 -> 보류: 채널 번호는 `DESIGN.md` §4(`vmx_channels` 측정)로 정했고, 보드에 인쇄된 핀 번호와의 표는 아직 없다
-- [ ] 커널/OS 버전에 따라 번호가 어긋나는지 확인했다. 어긋난다면: 어느 버전부터 ____, 얼마 ____ -> 이 이미지(커널 7.0)에서는 오프셋 없이 DIO 루프백이 동작했다. OS 이미지를 고정하므로 더 확인하지 않는다
-  - **결과(2026-10-10, 커널 7.0.0-1020-raspi):** HAL을 열 때 `RPI GPIO Interrupt Enable:  PI_BAD_ISR_INIT.`가 3번 나온다. 원인 확인: **`/sys/class/gpio`가 없고 `# CONFIG_GPIO_SYSFS is not set`** 이다. pigpio의 GPIO 인터럽트는 sysfs GPIO를 쓰므로 **이 커널에서는 구조적으로 초기화할 수 없다.** 사용자가 기억하던 "핀 번호에서 뺄 오프셋"은 sysfs가 아직 켜져 있던 커널(6.6 부근)의 이야기로 보이며, 이 커널에서는 오프셋이 아니라 인터럽트 기능 부재가 문제다. **핀 읽기/쓰기에 오프셋이 필요한지는 아직 모른다**(아래 핀 토글 테스트로 확인).
-  - 확인: `ls /sys/class/gpio; for c in /sys/class/gpio/gpiochip*; do echo $c $(cat $c/base) $(cat $c/ngpio) $(cat $c/label); done; grep GPIO_SYSFS /boot/config-$(uname -r)`
-  - 영향: 인터럽트를 쓰는 기능(`studica_driver::DIO::EnableInterrupt` 등). 우리 `halsim_vmx`의 DIO/Analog/Encoder/IMU는 인터럽트를 쓰지 않는다(폴링).
-  - **해결(Robot-Manager 레포의 `gpio_isr_shim/`):** `LD_PRELOAD`로 `gpioSetISRFunc*`를 GPIO 문자 장치 기반으로 대체했다. 로봇에서 `PI_BAD_ISR_INIT`이 사라졌고, HAL이 GPIO 13/6/12(모두 하강 에지)를 요청하며 GPIO 12에서 50 Hz(약 20 ms 간격)로 에지가 도착하는 것을 확인했다. shim을 켜고 끝까지 실행하면 정상 종료(코드 0)하고 쓰기 CRC 불일치 0, 실패 0이다.
-- [ ] 오프셋이 있으면 `robot_manager`의 `config.json` 프로필(`kernel_regex`)에 `HALSIMVMX_DIO_MAP` 등으로 적었다 -> 해당 없음(위와 같은 이유)
+- [ ] Created a `VMXChannelIndex` ↔ physical-pin map → add it to the table in §4 of `DESIGN.md`. **Pending:** channel numbers were established from `vmx_channels` measurements in §4 of `DESIGN.md`, but the correspondence to the pin labels printed on the board is not yet known.
+- [ ] Checked whether channel numbers vary by kernel/OS version. If they do, record the first affected version ____ and offset ____. **On this image (kernel 7.0), DIO loopback works with no offset.** The OS image is fixed, so no further check is planned.
+  - **Result (2026-10-10, kernel 7.0.0-1020-raspi):** Opening the HAL prints `RPI GPIO Interrupt Enable: PI_BAD_ISR_INIT.` three times. Root cause confirmed: **`/sys/class/gpio` is absent and `# CONFIG_GPIO_SYSFS is not set`.** pigpio GPIO interrupts use sysfs GPIO, so **they cannot be initialized on this kernel.** The remembered "offset to subtract from the pin number" likely refers to kernels around 6.6 where sysfs was enabled. Here, the issue is missing interrupt support, not an offset. **Whether pin reads/writes need an offset is still unknown** (check with the pin-toggle test below).
+  - Check with: `ls /sys/class/gpio; for c in /sys/class/gpio/gpiochip*; do echo $c $(cat $c/base) $(cat $c/ngpio) $(cat $c/label); done; grep GPIO_SYSFS /boot/config-$(uname -r)`
+  - Impact: features using interrupts (such as `studica_driver::DIO::EnableInterrupt`). DIO/Analog/Encoder/IMU in our `halsim_vmx` do not use interrupts; they poll.
+  - **Fix (in `gpio_isr_shim/` in the Robot-Manager repository):** `LD_PRELOAD` replaces `gpioSetISRFunc*` with GPIO character-device-based implementations. On the robot, `PI_BAD_ISR_INIT` disappeared. HAL requested GPIO 13/6/12 (all falling edges), and edges arrived on GPIO 12 at 50 Hz (about every 20 ms). With the shim enabled, the program completed normally (exit code 0), with zero SPI write CRC mismatches and failures.
+- [ ] If an offset exists, recorded it in the `robot_manager` `config.json` profile (`kernel_regex`) using values such as `HALSIMVMX_DIO_MAP`. **Not applicable** for the reason above.
 
-**기대**: 대응표가 안정적이다. **오프셋이 없으면** 프로필 기능은 필요 없는 것이다(그러면 `robot_manager`는 systemd 유닛 하나로 대체할 수 있다).
+**Expected:** The mapping remains stable. **If there is no offset**, the profile feature is unnecessary (and `robot_manager` could be replaced by a single systemd unit).
 
-## 4. Studica 플러그인 빌드 (`libhalsim_vmx_studica.so`)
+## 4. Build the Studica plugin (`libhalsim_vmx_studica.so`)
 
-이 PC에서는 스텁 헤더로 **문법 검사만** 했다. 실제 컴파일과 링크는 처음이다.
+On this PC, only **syntax checking** with stub headers has been done. Actual compile and link are still needed.
 
-필요: `g++`(C++20, GCC 11 이상), `VMXPi.h`, `libvmxpi_hal_cpp`.
+Requirements: `g++` (C++20, GCC 11 or later), `VMXPi.h`, and `libvmxpi_hal_cpp`.
 
-방법 A — 수동 빌드(명령 미검증, 가장 단순):
+Method A — manual build (command untested; simplest):
 ```bash
 cd allwpilib
 g++ -std=c++20 -shared -fPIC -O2 \
@@ -143,244 +140,253 @@ g++ -std=c++20 -shared -fPIC -O2 \
   -L/usr/local/lib/vmxpi -lvmxpi_hal_cpp -lrt -lpthread -latomic \
   -o libhalsim_vmx_studica.so
 ```
-방법 B — CMake: `-DWPILIB_WITH_STUDICA=ON`로 `halsim_vmx_studica` 타깃을 빌드한다. allwpilib 전체 설정이 따라오므로 C++23이 되는 GCC(13 이상)가 필요하다.
+Method B — CMake: build the `halsim_vmx_studica` target with `-DWPILIB_WITH_STUDICA=ON`. This pulls in the full allwpilib configuration and requires GCC 13 or later for C++23.
 
-- [x] 컴파일 성공 — **2026-10-10 로봇(Ubuntu 26.04, g++ 15.2.0)에서 `install.sh`로 확인됨**
-- [x] 링크 성공 — `/opt/halsim_vmx/libhalsim_vmx_studica.so`(97KB), `ldd`에 `not found` 없음, `libvmxpi_hal_cpp.so`는 `/usr/local/lib/vmxpi`에서 해석됨
-- [x] `nm -D`에 `wpilibvmx_CreateBackendV1`, `wpilibvmx_DestroyBackendV1`, `wpilibvmx::SharedVMX()`가 보인다
-- (참고) `MakeBackendApi`의 람다가 약한 심볼로 같이 내보내진다. 해롭지 않지만 `-fvisibility=hidden`으로 숨길 수 있다.
-- **아직 안 한 것: 이 `.so`를 실제로 로드해서 하드웨어를 움직이는 것(§6).**
+- [x] Compile succeeded — **confirmed on robot (Ubuntu 26.04, g++ 15.2.0) using `install.sh` on 2026-10-10**.
+- [x] Link succeeded — `/opt/halsim_vmx/libhalsim_vmx_studica.so` (97 KB), no `not found` from `ldd`; `libvmxpi_hal_cpp.so` resolves from `/usr/local/lib/vmxpi`.
+- [x] `nm -D` shows `wpilibvmx_CreateBackendV1`, `wpilibvmx_DestroyBackendV1`, and `wpilibvmx::SharedVMX()`.
+- (Reference) `MakeBackendApi`'s lambda is also exported as a weak symbol. Harmless, but it could be hidden with `-fvisibility=hidden`.
+- **Still not done:** load this `.so` and operate hardware with it (§6).
 
-## 5. WPILib 라이브러리가 이 OS에서 로드되는가 (glibc)
+## 5. Can WPILib libraries load on this OS? (glibc)
 
-가장 큰 위험이다. trixie 툴체인으로 만든 `linuxarm64` 라이브러리는 glibc 2.41 기준이다.
+This is the largest risk. `linuxarm64` libraries built with the trixie toolchain target glibc 2.41.
 
-1. PC에서 `linuxarm64` JNI 라이브러리를 받아 VMX로 복사한다. 예: 테스트 프로젝트에서 `vmxRelease wpi.java.deps.wpilibJniRelease(wpi.platforms.linuxarm64)`를 두고 `./gradlew` 의존성 해석 후 캐시된 zip에서 `*.so`를 꺼낸다.
-2. VMX에서 확인한다:
+1. On the PC, download the `linuxarm64` JNI library and copy it to the VMX. For example, add `vmxRelease wpi.java.deps.wpilibJniRelease(wpi.platforms.linuxarm64)` to a test project, resolve dependencies with `./gradlew`, and extract `*.so` from the cached ZIP.
+2. Check on the VMX:
    ```bash
-   ldd /경로/libwpiHal.so | grep "not found"        # 비어 있어야 한다
-   objdump -T /경로/libwpiHal.so | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1   # 필요한 최대 glibc 버전
-   ldd --version | head -1                           # §0의 glibc와 비교
+   ldd /path/libwpiHal.so | grep "not found"        # should be empty
+   objdump -T /path/libwpiHal.so | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1   # highest required glibc
+   ldd --version | head -1                           # compare with glibc in §0
    ```
-   (`libstdc++`도 같은 방식으로: `objdump -T ... | grep -o 'GLIBCXX_[0-9.]*' | sort -Vu | tail -1` 대 `strings /usr/lib/aarch64-linux-gnu/libstdc++.so.6 | grep GLIBCXX | sort -Vu | tail -1`)
+   (Check `libstdc++` the same way: `objdump -T ... | grep -o 'GLIBCXX_[0-9.]*' | sort -Vu | tail -1` versus `strings /usr/lib/aarch64-linux-gnu/libstdc++.so.6 | grep GLIBCXX | sort -Vu | tail -1`.)
 
-- [x] **PC에서 읽어 본 결과(2026-10-10, 로봇에서 실행한 것은 아님):** Maven `org.wpilib.hal:hal-cpp:2027.0.0-alpha-7:linuxarm64`(11.6MB)의 `libwpiHal.so`:
-  - **시뮬레이션 HAL이다**: `HALSIM_*` 심볼 460개, `HAL_LoadExtensions`/`HAL_LoadOneExtension`/`HAL_OnShutdown` 있음. (`allwpilib/hal/build.gradle`: 플랫폼이 `systemcore`일 때만 `src/main/native/systemcore`, 그 외 모든 플랫폼은 `src/main/native/sim`을 컴파일한다.)
-  - 필요한 최대 **`GLIBC_2.34`**, **`GLIBCXX_3.4.31`**. 툴체인 glibc(2.41)보다 훨씬 낮다. 로봇 glibc 2.43은 충분하다. (Ubuntu 22.04는 glibc는 되지만 libstdc++이 GCC 12라 `GLIBCXX_3.4.31`에서 걸린다.)
-  - 의존: `libwpiutil`, `libntcore`, `libdatalog`, `libwpinet`(다른 zip), 시스템의 `libatomic.so.1`, `libstdc++`, `libm`, `libgcc_s`, `libc`.
-  - 다른 라이브러리(`wpiutil`, `ntcore`, `wpimath` 등)와 `libatomic1` 설치 여부는 아직 확인 안 함.
-- [x] 로봇에서 `ldd`로 `not found` 없음 (위 라이브러리를 로봇으로 옮겨서 확인) (2026-10-11: 같은 라이브러리로 실제 프로그램이 돌았다)
-- [x] 필요한 최대 GLIBC 버전 2.34 ≤ 이 OS의 glibc 2.43
-- [x] 필요한 최대 GLIBCXX 버전 3.4.31 ≤ 이 OS의 libstdc++ (GCC 15, 로봇의 `libstdc++.so.6`에서 `strings ... | grep GLIBCXX`로 재확인 권장)
+- [x] **PC inspection (2026-10-10; not run on robot at the time):** `libwpiHal.so` from Maven `org.wpilib.hal:hal-cpp:2027.0.0-alpha-7:linuxarm64` (11.6 MB):
+  - **It is a simulation HAL:** 460 `HALSIM_*` symbols and `HAL_LoadExtensions` / `HAL_LoadOneExtension` / `HAL_OnShutdown`. (`allwpilib/hal/build.gradle`: only platform `systemcore` compiles `src/main/native/systemcore`; every other platform compiles `src/main/native/sim`.)
+  - Highest required versions: **`GLIBC_2.34`**, **`GLIBCXX_3.4.31`**. These are well below the toolchain's glibc 2.41; robot glibc 2.43 is sufficient. (Ubuntu 22.04 has a sufficient glibc but GCC 12's libstdc++ lacks `GLIBCXX_3.4.31`.)
+  - Dependencies: `libwpiutil`, `libntcore`, `libdatalog`, `libwpinet` (other ZIPs), and system `libatomic.so.1`, `libstdc++`, `libm`, `libgcc_s`, `libc`.
+  - Other libraries (`wpiutil`, `ntcore`, `wpimath`, etc.) and whether `libatomic1` is installed have not been checked.
+- [x] No missing dependencies according to `ldd` on robot after copying the libraries there (2026-10-11: a real program ran with the same libraries).
+- [x] Highest required GLIBC 2.34 ≤ this OS's glibc 2.43.
+- [x] Highest required GLIBCXX 3.4.31 ≤ this OS's libstdc++ (GCC 15; recommended to reconfirm using `strings ... | grep GLIBCXX` on the robot's `libstdc++.so.6`).
 
-**실패하면**: 이 OS에서는 공개된 `linuxarm64` 라이브러리를 쓸 수 없다. 선택지는 (a) VMX를 더 새로운 OS(Debian 13/Ubuntu 26.04)로 올린다 — 단 §1을 다시 통과해야 한다, (b) 호환 sysroot로 WPILib을 직접 빌드한다, (c) VMX에서 직접 빌드한다.
+**If this fails:** Published `linuxarm64` libraries cannot be used on this OS. Options: (a) upgrade VMX to a newer OS (Debian 13 / Ubuntu 26.04), then repeat §1; (b) build WPILib directly with a compatible sysroot; or (c) build directly on the VMX.
 
-## 6. 확장이 로드되고 하드웨어를 움직이는가
+## 6. Does the extension load and operate hardware?
 
-### 6a. 로봇에서 도구 빌드 (`tools/build_on_robot.sh`)
+### 6a. Build tools on the robot (`tools/build_on_robot.sh`)
 
-WPILib을 빌드하지 않는다. 공개된 `linuxarm64` 라이브러리(약 42MB: hal, wpiutil, ntcore, datalog, wpinet)를 받아서 링크한다. 로봇의 allwpilib 체크아웃에서 실행:
+This does not build WPILib. It downloads the published `linuxarm64` libraries (about 42 MB: hal, wpiutil, ntcore, datalog, wpinet) and links against them. Run from the robot's allwpilib checkout:
 
 ```bash
 ./simulation/halsim_vmx/tools/build_on_robot.sh
 ```
 
-결과(`~/halsim_vmx-build`): `libhalsim_vmx.so`(확장), `hal_dio_test`(sim HAL로 WPILib DIO를 움직이는 시험), `vmx_channels`(VMX 채널 지도 출력). 라이브러리는 `~/wpilib-libs`. 끝에 `ldd`로 `not found`를 검사한다(= §5의 로봇 쪽 확인).
-`--dry-run`으로 명령만 볼 수 있다.
-**로봇 실행 결과(2026-10-10):** `libhalsim_vmx.so`, `hal_dio_test`, `vmx_channels` 모두 오류 없이 컴파일(g++ 15.2.0), 끝의 `ldd` 검사에 `not found` 없음(공개 `linuxarm64` WPILib 라이브러리가 이 로봇에서 해석됨), `vmx_channels`가 채널 지도를 출력(결과는 `DESIGN.md` §4).
+Outputs under `~/halsim_vmx-build`: `libhalsim_vmx.so` (extension), `hal_dio_test` (test that drives WPILib DIO through the sim HAL), and `vmx_channels` (prints the VMX channel map). Libraries are placed under `~/wpilib-libs`. At the end, `ldd` checks for missing dependencies (the robot-side check from §5).
+Use `--dry-run` to print commands without running them.
+**Robot results (2026-10-10):** `libhalsim_vmx.so`, `hal_dio_test`, and `vmx_channels` all compiled without errors (g++ 15.2.0). The final `ldd` check found no `not found` dependencies (published `linuxarm64` WPILib libraries resolve on this robot), and `vmx_channels` printed the channel map (see §4 of `DESIGN.md`).
 
-### 6b. 채널 번호는 추측하지 말고 로봇에게 물어본다
+### 6b. Ask the robot for channel numbers; do not guess
 
 ```bash
 sudo ~/halsim_vmx-build/vmx_channels
 ```
-FlexDIO/AnalogIn/HiCurrDIO/CommDIO별 채널 인덱스 범위와 채널마다의 기능(DigitalIn/Out, PWM, Encoder, Interrupt, SPI/I2C/UART 등)을 출력한다. 이 번호를 `HALSIMVMX_DIO_MAP`/`HALSIMVMX_ANALOG_MAP`에 쓴다(§3의 채널표도 여기서 채운다).
 
-### 6c. sim HAL로 DIO를 움직이기 (`hal_dio_test`)
+Prints the channel index ranges and capabilities (DigitalIn/Out, PWM, Encoder, Interrupt, SPI/I2C/UART, etc.) for FlexDIO / AnalogIn / HiCurrDIO / CommDIO. Use these values in `HALSIMVMX_DIO_MAP` / `HALSIMVMX_ANALOG_MAP` (and fill in the channel table in §3).
 
-`HALSIMVMX_DIO_MAP="0:<N>,1:<M>"`(WPILib DIO 0 -> VMX 채널 N, DIO 1 -> VMX 채널 M). 출력 N과 입력 M을 **점퍼선으로 연결**하면 루프백으로 검사하고(`loopback OK`), 연결이 없으면 출력 핀을 멀티미터/LED로 본다. `build_on_robot.sh`가 마지막에 실행 명령을 출력한다.
-로그에 `HALSim VMX: DIO 0 -> VMX channel N (output)`가 나오면 claim 성공, `cannot claim VMX channel ...`이 나오면 실패(채널이 그 용도를 지원하지 않거나 이미 쓰는 중).
+### 6c. Drive DIO through the sim HAL (`hal_dio_test`)
 
-**두 번째 실행(점퍼선 연결 후) — 루프백 성공:** `wrote 0, read 0` / `wrote 1, read 1`이 10줄 모두 일치하고 `loopback OK`. **WPILib 시뮬레이션 HAL의 DIO -> `halsim_vmx` 확장 -> Studica 플러그인 -> VMX 하드웨어 -> 점퍼선 -> 입력 -> HAL의 전체 경로가 실제 로봇에서 동작한다.** (VMX 10 출력, 11 입력, `HALSIMVMX_DIO_MAP="0:10,1:11"`.)
-**종료 문제 — 해결됨(2026-10-10):** `hal_dio_test`가 `pigpio library closed.` 뒤에도 끝나지 않았다(`timeout`이 60초 뒤 강제 종료, 종료 코드 124, 터미널에서는 프롬프트가 안 돌아오고 `Ctrl-C`도 소용없음).
-`gdb`(`thread apply all bt`)로 확인한 원인: **pigpio의 스레드 3개(`pthAlertThread`, `pthFifoThread`, `pthSocketThread`)가 종료 후에도 살아 있었고**, FIFO 스레드가 `fgets`에서 stdio 락을 잡은 채 대기해서 메인 스레드의 `exit()` -> `_IO_flush_all`이 영원히 멈췄다. 진짜 `gpioTerminate`가 호출되지 않았기 때문이다.
-**원인은 `gpio_isr_shim`의 버그:** shim이 `dlsym(RTLD_NEXT, "gpioTerminate")`로 원래 함수를 찾는데, Studica 플러그인이 HAL을 `dlopen(RTLD_LOCAL)`로 불러서 HAL이 전역 범위 밖에 있어 `NULL`이었다(HAL을 직접 링크한 `vmx_n`은 문제 없었다). stdin 가설은 틀렸다(`< /dev/null`로도 멈췄다).
-**수정 후 로봇 확인:** `exit code: 0`으로 프롬프트가 바로 돌아오고, 진짜 `gpioTerminate`가 실행된 증거로 pigpio의 종료 통계 배너(`pigpio version=69 internals=300 ... cbTicks ...`)가 출력된다. `loopback OK`도 그대로.
+Set `HALSIMVMX_DIO_MAP="0:<N>,1:<M>"` (WPILib DIO 0 → VMX channel N, DIO 1 → VMX channel M). To test loopback, connect output N to input M **with a jumper wire** (`loopback OK`); without a jumper, inspect the output pin using a multimeter/LED. `build_on_robot.sh` prints the run command at the end.
+If the log says `HALSim VMX: DIO 0 -> VMX channel N (output)`, the claim succeeded. `cannot claim VMX channel ...` means failure (the channel may not support that use or may already be in use).
 
-**첫 실행 결과(2026-10-10, 출력=VMX 10, 입력=VMX 11):** 확장 로드(`HAL Extensions: Successfully loaded extension`), 플러그인 사용, 두 채널 claim, 출력 값이 보드에 전달됨(SPI 쓰기 19회 -> 38회, CRC 오류 0)까지 **확인됐다.**
-루프백 읽기는 항상 1이었다(`wrote 0, read 1`). Studica `DIO`는 입력을 **풀업**으로 열기 때문에 연결되지 않은 입력은 항상 1을 읽는다. 배선(또는 보드 표기와 HAL 채널 번호의 차이)을 먼저 의심한다. **루프백 읽기는 아직 확인 안 됨.**
-배선과 확장을 가르려면 HAL/확장 없이 Studica `DIO`만 쓰는 `dio_probe`를 먼저 돌린다:
+**Second run (after connecting the jumper) — loopback passed:** All 10 lines of `wrote 0, read 0` / `wrote 1, read 1` matched and printed `loopback OK`. **The complete path works on the actual robot: WPILib sim HAL DIO → `halsim_vmx` extension → Studica plugin → VMX hardware → jumper wire → input → HAL.** (VMX output 10, input 11, `HALSIMVMX_DIO_MAP="0:10,1:11"`.)
+**Shutdown hang — fixed (2026-10-10):** `hal_dio_test` did not exit after `pigpio library closed.` (`timeout` killed it after 60 seconds with exit code 124; the prompt never returned and Ctrl-C had no effect).
+`gdb` (`thread apply all bt`) showed the cause: three pigpio threads (`pthAlertThread`, `pthFifoThread`, `pthSocketThread`) remained alive after shutdown. The FIFO thread waited in `fgets` while holding the stdio lock, so the main thread hung forever in `exit()` → `_IO_flush_all`. `gpioTerminate` had not actually been called.
+**Root cause was a `gpio_isr_shim` bug:** the shim used `dlsym(RTLD_NEXT, "gpioTerminate")` to find the original function, but the Studica plugin loads HAL with `dlopen(RTLD_LOCAL)`, keeping HAL outside the global lookup scope and returning `NULL` (no issue in `vmx_n`, which links HAL directly). The stdin theory was wrong (redirecting stdin from `/dev/null` still hung).
+**Confirmed on robot after the fix:** returned to the prompt immediately with `exit code: 0`. The pigpio shutdown statistics banner (`pigpio version=69 internals=300 ... cbTicks ...`) confirms that the real `gpioTerminate` ran. `loopback OK` still passes.
+
+**First-run results (2026-10-10, output=VMX 10, input=VMX 11):** Confirmed extension load (`HAL Extensions: Successfully loaded extension`), plugin use, both channel claims, and output reaching the board (SPI writes increased from 19 to 38, zero CRC errors). However, loopback input always read `1` (`wrote 0, read 1`). Studica `DIO` opens inputs with pull-up, so a disconnected input reads `1`. First suspect wiring (or a mismatch between printed board labels and HAL channel numbers). **Loopback input was not yet verified.**
+To distinguish wiring from extension issues, first run `dio_probe`, which uses Studica `DIO` without HAL/the extension:
 
 ```bash
 sudo ~/halsim_vmx-build/dio_probe 10 11
 ```
-`loopback OK`면 배선과 채널 번호는 정상이므로 확장 쪽을 본다. 실패하면 배선/채널 번호 문제다(`input before driving anything: 1`이면 입력이 어디에도 연결 안 된 것).
 
-### 6d. `robot_manager`의 종료 순서를 실제 HAL 프로세스로 시험
+If it prints `loopback OK`, wiring and channel numbers are correct, so investigate the extension. If it fails, investigate wiring/channel numbers (`input before driving anything: 1` means the input is not connected).
 
-sim HAL을 초기화하고(확장 로드) 대기만 하는 작은 시험 프로그램을 `robotCommand`로 돌린 뒤 서비스를 멈춰서 종료 순서가 빠르게 끝나는지 봤다(시험 프로그램은 지웠다. 같은 시험은 아무 로봇 프로그램으로 `sudo systemctl stop robot_manager`를 하면 된다).
-기대: `stopping robot program ...` 다음에 `robot program stopped by SIGINT after 0.x s`(`sending SIGKILL` 없음).
+### 6d. Test `robot_manager` shutdown order with a real HAL process
 
-**첫 실측(2026-10-10) — 두 가지 문제가 나왔다:**
-1. **`robot_manager`가 자식을 정리하기 전에 종료했다.** systemd 로그 `State 'final-sigterm' timed out. Killing.` / `Killing process ... (시험 프로그램) with signal SIGKILL`: `robot_manager`가 이미 끝난 뒤에 남은 시험 프로그램을 systemd가 15초 뒤 `SIGKILL`했다.
-   원인: 시그널 핸들러가 `stop()`을 데몬 스레드로 돌리는데, 리더가 끝나면 메인의 `run()`이 먼저 돌아와 인터프리터가 종료되면서 그룹 정리(유예 후 `SIGKILL`)가 끊겼다. 단위 테스트는 `stop()`을 직접 호출해서 놓쳤다.
-   **수정:** 종료 스레드를 메인이 `join`한다. 이 상황을 재현하는 테스트(`test_the_service_finishes_stopping_the_program_before_it_exits`)를 먼저 만들어 실패하는 것을 확인한 뒤 고쳤다(PC). 로봇 재확인은 아직.
-2. **HAL은 `SIGTERM`에서 정리만 하고 프로세스를 끝내지 않는 것으로 보인다.** `kill -TERM`을 보낸 시험 프로그램이 13.7초 뒤에도 살아 있었고, 로그는 `VMX HAL:  SIGTERM signal received.` -> `closing pigpio library to release VMX resources.` -> `pigpio library closed and VMX resources released.` -> `At VMXPi::Terminate` -> `Stopped RemoteServer` -> `spiClose: pigpio uninitialised` / `Error closing SPI AUX Channel 2.`에서 끝난다
-   (`Ctrl-C`/SIGINT에서는 `Exiting VMX-pi HAL application ... [normal exit]`가 나왔다). 핸들러가 VMX 자원을 정리하고 돌아오기만 하는지는 `gdb`로 확인 예정(**가설, 미확인**). 사실이면 `robot_manager`의 `SIGTERM`은 매번 `stop_grace_seconds`를 다 기다린 뒤 `SIGKILL`로 끝난다(VMX 자원은 이미 정리된 상태).
-   **확인됨(2026-10-10):** `gdb`로 `SIGTERM` 3초 뒤 스레드를 보니 메인 스레드는 시험 프로그램의 `main()` 안 `nanosleep`(대기 루프)에 그대로 있고 pigpio 스레드 3개는 사라졌다 = HAL의 `SIGTERM` 핸들러는 VMX/pigpio를 정리하고 **돌아오기만 한다.**
-   **`SIGINT`는 0.21초 만에 깨끗하게 종료**한다(`Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit]`; 이때 찍히는 `Signal 2 received by PIGPIOClient::signal_func()`와 스택 출력은 HAL의 정상 출력이다).
-   **조치:** `robot_manager`가 `SIGINT` -> `SIGTERM` -> `SIGKILL` 순서로 멈춘다(설정 `stop_signals`). PC에서 신호 순서/폴백/설정 파싱을 테스트했다(39개). **서비스로 돌린 시험 프로그램이 `stopped by SIGINT after 0.x s`로 끝나는지는 아래 "로봇 확인됨"에서 확인했다.**
-   **로봇 확인됨(2026-10-10, `d31287e`):** `stopping robot program (pid ...): SIGINT then SIGTERM, then SIGKILL; 5s in total` -> `robot program stopped by SIGINT after 0.2s`. `sending SIGKILL`, systemd의 `Killing process`/`final-sigterm`은 없었다. 위 문제 1(그룹 정리 전 종료)과 2(SIGTERM 무반응) 모두 해결.
-   참고: 옛 Studica GradleRIO 포크는 `frcKillRobot.sh -t`(재시작은 `-t -r`)로 멈추고 `/home/lvuser/robotCommand`에 명령을 쓴다. 그 스크립트가 보내는 신호는 소스로 확인하지 못했다(VMX 이미지 안에 있음).
+A small test program initialized the sim HAL (loading the extension) and then waited. It was run as `robotCommand`, and the service was stopped to check whether shutdown completed promptly (the test program has since been deleted; the same test can be done with any robot program using `sudo systemctl stop robot_manager`).
+Expected: after `stopping robot program ...`, see `robot program stopped by SIGINT after 0.x s` (no `sending SIGKILL`).
 
-### 6d-2. 프로그램 종료 때 `SIGILL`(종료 코드 132) — `libMrcLib`의 LSE 명령 (2026-10-11)
+**First measurements (2026-10-10) found two problems:**
 
-C++ 프로그램(`vmx-cpp-test`, `./gradlew deploy`로 올림)이 시험을 끝내고 종료할 때마다 `Illegal instruction (core dumped)`, 종료 코드 132가 났다. `gdb`로 확인: `uv_library_shutdown()`(`libMrcLib.so`) 안의 `swp w1, w1, [x0]`.
-**원인:** `swp`/`ldadd`/`cas`는 ARMv8.1 LSE 원자 명령인데 Pi 4(Cortex-A72, ARMv8.0)에는 없다. `libMrcLib.so`(WPILib `mrclib`, 소스 비공개)는 `linuxarm64`라는 이름으로 배포되지만 **SystemCore용 Buildroot GCC 14.3**으로 빌드돼 LSE 명령이 1,219곳에 들어 있다(`DsClient`, `MulticastResolverClient`, `UvDatapath` 등 Driver Station 네트워크 쪽). 다른 WPILib 라이브러리, 우리 실행 파일, `libvmxpi_hal_cpp`, 우리 플러그인에는 CPU를 확인해서 쓰는 libgcc 보조 함수(`__aarch64_*`)뿐이라 안전하다(PC에서 약 90개 라이브러리를 디스어셈블해 확인, OpenCV는 안 봄). `libwpiHal`은 `mrclib`를 링크하지 않는다(upstream 커밋 `7d214e53a`).
-**조치:** `Robot-Manager/lse_emu/` — `SIGILL` 핸들러로 LSE 명령을 `ldxr/stxr`로 대신 실행하는 `LD_AUDIT` 라이브러리. `LD_PRELOAD`로는 안 된다(로더가 라이브러리를 뒤쪽부터 초기화해서 프리로드는 MrcLib의 생성자보다 늦다, qemu에서 재현). `robot_manager`가 `/proc/cpuinfo`에 `atomics`가 없으면 스스로 `LD_AUDIT`을 설정한다.
-- [x] Pi 4에서 `make test`: 224개 명령 형태 + 스레드 원자성 + 생성자 + 외부 `SIGILL` 모두 통과
-- [x] 서비스로 돌린 프로그램이 종료 코드 **0**으로 끝난다 (`emulated 1 LSE instruction`)
-- [x] 비용: **명령당 약 26.8 µs(일반 원자 덧셈의 약 1,200배)**. 지금 경로에서는 종료 때 1개뿐이라 영향 없음. Driver Station 네트워크 코드를 쓰면 느려질 수 있다(`VMX_LSE_EMU_DEBUG=1`로 개수를 먼저 센다).
-- [ ] MrcLib의 Driver Station 네트워크 코드를 실제로 쓰는 경우의 동작/속도는 미확인
+1. **`robot_manager` exited before cleaning up its child.** The systemd log showed `State 'final-sigterm' timed out. Killing.` / `Killing process ... (test program) with signal SIGKILL`: after `robot_manager` exited, systemd killed the remaining test program with `SIGKILL` 15 seconds later.
+   Cause: the signal handler called `stop()` in a daemon thread. When the listener exited, `run()` returned first; the interpreter then shut down and interrupted group cleanup (grace period followed by `SIGKILL`). Unit tests missed it because they called `stop()` directly.
+   **Fix:** the main thread joins the shutdown thread. First added a regression test (`test_the_service_finishes_stopping_the_program_before_it_exits`) and confirmed it failed, then fixed the issue (on PC). Robot verification was still pending at the time.
+2. **The HAL appeared to clean up on `SIGTERM` without exiting the process.** A test program was still running 13.7 seconds after `kill -TERM`. Its log ended with `VMX HAL: SIGTERM signal received.` → `closing pigpio library to release VMX resources.` → `pigpio library closed and VMX resources released.` → `At VMXPi::Terminate` → `Stopped RemoteServer` → `spiClose: pigpio uninitialised` / `Error closing SPI AUX Channel 2.`
+   (`Ctrl-C` / SIGINT showed `Exiting VMX-pi HAL application ... [normal exit]`.) It was only a **hypothesis, not yet confirmed**, that the handler cleaned up VMX resources and returned. If so, `robot_manager` would wait for the full `stop_grace_seconds` on each SIGTERM and then use `SIGKILL` (after VMX resources were already released).
+   **Confirmed (2026-10-10):** `gdb` inspection 3 seconds after `SIGTERM` showed that the main thread remained in `nanosleep` (the wait loop) inside the test program's `main()`, while the three pigpio threads had disappeared. The HAL's `SIGTERM` handler cleans up VMX/pigpio and **returns without exiting the process**.
+   **`SIGINT` exits cleanly in 0.21 seconds** (`Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit]`; `Signal 2 received by PIGPIOClient::signal_func()` and its stack output are normal HAL output).
+   **Fix:** `robot_manager` stops processes in this order: `SIGINT` → `SIGTERM` → `SIGKILL` (configured by `stop_signals`). Signal order, fallbacks, and config parsing passed PC tests (39 tests). The robot check for `stopped by SIGINT after 0.x s` is recorded below.
+   **Confirmed on robot (2026-10-10, `d31287e`):** `stopping robot program (pid ...): SIGINT then SIGTERM, then SIGKILL; 5s in total` → `robot program stopped by SIGINT after 0.2s`. No `sending SIGKILL`, systemd `Killing process`, or `final-sigterm`. Both issue 1 (exit before child cleanup) and issue 2 (SIGTERM does not exit) are resolved.
+   Reference: the old Studica GradleRIO fork stops programs with `frcKillRobot.sh -t` (`-t -r` for restart) and writes commands to `/home/lvuser/robotCommand`. The signal sent by that script has not been verified from source (it is inside the VMX image).
 
-### 6d-3. 로봇에서 빌드하지 않고 `./gradlew deploy`만으로 (2026-10-11)
+### 6d-2. `SIGILL` (exit code 132) at program shutdown — LSE instructions in `libMrcLib` (2026-10-11)
 
-C++ 프로젝트(`vmx-cpp-test`)가 `halsim_vmx`와 Studica 백엔드 플러그인을 **PC에서 교차 빌드**(`NativeLibrarySpec` 컴포넌트 2개, `linuxarm64`)하고 deploy가 라이브러리 폴더(`~/wpilib/third-party/lib`)에 같이 올린다. 로봇에서 가져오는 것은 `VMXPi.h`와 `libvmxpi_hal_cpp.so`(OS 이미지에 있는 것)뿐이다(`fetchVmxSdkvmx`).
-- [x] 로봇 로그: `HALSim VMX: using backend /home/ubuntu/wpilib/third-party/lib/libhalsim_vmx_studica.so`, `Successfully loaded extension`, `IMU claimed`, `Encoder 0 -> VMX channels 0/1`, `AnalogIn 0 -> VMX channel 22`. `/opt/halsim_vmx`와 `~/halsim_vmx-build`는 이번 프로그램이 쓰지 않는다(rpath에서 뺐다).
-- [x] 프로젝트 안의 `lib library: ...`로 링크한 라이브러리는 GradleRIO가 자동으로 같이 올린다. 링크하지 않는 확장(`libhalsim_vmx`)은 실행 파일이 함께 링크해야 올라간다.
-- 발견: `environment.put(key, "${...}")`처럼 Groovy GString을 넣으면 `robotCommand` 생성이 `ClassCastException`으로 실패했다 -> GradleRIO를 고침(Java/C++ 양쪽, 테스트 추가).
-- `tools/build_on_robot.sh`는 이제 PC 교차 빌드가 안 될 때의 대안이다. Java 프로젝트는 아직 이 방법이 없다(확장을 만들어 줄 곳이 없음).
-- [ ] 아직 안 한 것: Maven에 올리기(이 방식은 `allwpilib` 소스 경로를 프로젝트가 직접 가리킨다), Java 프로젝트.
+The C++ program (`vmx-cpp-test`, deployed with `./gradlew deploy`) consistently exited after testing with `Illegal instruction (core dumped)`, code 132. `gdb` traced it to `swp w1, w1, [x0]` in `uv_library_shutdown()` (`libMrcLib.so`).
+**Cause:** `swp` / `ldadd` / `cas` are ARMv8.1 LSE atomic instructions unavailable on Pi 4 (Cortex-A72, ARMv8.0). `libMrcLib.so` (WPILib `mrclib`, source unavailable) is distributed as `linuxarm64`, but built with **SystemCore Buildroot GCC 14.3**, which emitted LSE instructions in 1,219 locations (`DsClient`, `MulticastResolverClient`, `UvDatapath`, and other Driver Station networking code). Other WPILib libraries, our executable, `libvmxpi_hal_cpp`, and our plugin use only CPU-detecting libgcc helper functions (`__aarch64_*`), so are safe (verified by disassembling about 90 libraries on PC; OpenCV was not checked). `libwpiHal` does not link `mrclib` (upstream commit `7d214e53a`).
+**Fix:** `Robot-Manager/lse_emu/` provides an `LD_AUDIT` library that emulates LSE instructions using `ldxr/stxr` in a `SIGILL` handler. `LD_PRELOAD` does not work (the loader initializes libraries from the back, so preloading happens after the MrcLib constructor; reproduced in qemu). If `/proc/cpuinfo` lacks `atomics`, `robot_manager` sets `LD_AUDIT` automatically.
 
-### 6e. 기존 확인 항목
+- [x] On Pi 4, `make test`: all 224 instruction forms, thread atomicity, constructor, and external `SIGILL` tests passed.
+- [x] Service-run program exits with code **0** (`emulated 1 LSE instruction`).
+- [x] Cost: **about 26.8 µs per instruction** (about 1,200× a normal atomic addition). Only one instruction is used at shutdown on the current path, so impact is negligible. Driver Station networking may be slower; count instructions first with `VMX_LSE_EMU_DEBUG=1`.
+- [ ] Behavior/performance when actually using MrcLib's Driver Station networking code is unverified.
 
-최소 Java 로봇 프로젝트(또는 PC에서 `./gradlew deploy`한 결과)로 확인한다. 수동 실행 예(명령 미검증):
+### 6d-3. Deploy with `./gradlew deploy` without building on the robot (2026-10-11)
+
+The C++ project (`vmx-cpp-test`) **cross-compiles** `halsim_vmx` and the Studica backend plugin on the PC (two `NativeLibrarySpec` components targeting `linuxarm64`); deploy uploads both to the library directory (`~/wpilib/third-party/lib`). The only files fetched from the robot are `VMXPi.h` and `libvmxpi_hal_cpp.so` from its OS image (`fetchVmxSdkvmx`).
+
+- [x] Robot logs: `HALSim VMX: using backend /home/ubuntu/wpilib/third-party/lib/libhalsim_vmx_studica.so`, `Successfully loaded extension`, `IMU claimed`, `Encoder 0 -> VMX channels 0/1`, `AnalogIn 0 -> VMX channel 22`. This program does not use `/opt/halsim_vmx` or `~/halsim_vmx-build` (removed from rpath).
+- [x] GradleRIO automatically deploys a library linked in the project using `lib library: ...`. An extension not linked by that mechanism (`libhalsim_vmx`) must be linked by the executable to be uploaded.
+- Found: putting a Groovy GString such as `"${...}"` into `environment.put(key, ...)` caused `robotCommand` generation to fail with `ClassCastException` → fixed in GradleRIO for both Java/C++ and added tests.
+- `tools/build_on_robot.sh` is now a fallback if PC cross-compilation fails. Java projects still have no equivalent (there is nowhere to build the extension).
+- [ ] Still outstanding: publish to Maven (this approach directly points the project at the `allwpilib` source directory) and test a Java project.
+
+### 6e. Existing verification items
+
+Check with a minimal Java robot project (or the result of `./gradlew deploy` from PC). Manual run example (command untested):
 
 ```bash
-sudo HALSIM_EXTENSIONS="/경로/libhalsim_vmx.so" \
-     HALSIMVMX_BACKEND="/경로/libhalsim_vmx_studica.so" \
+sudo HALSIM_EXTENSIONS="/path/libhalsim_vmx.so" \
+     HALSIMVMX_BACKEND="/path/libhalsim_vmx_studica.so" \
      HALSIMVMX_DIO_MAP="..." HALSIMVMX_ANALOG_MAP="..." HALSIMVMX_IMU=1 \
-     /usr/bin/java -Djava.library.path=/경로 -cp ... 로봇.메인클래스
+     /usr/bin/java -Djava.library.path=/path -cp ... robot.MainClass
 ```
 
-로그에서 확인한다.
-- [x] `HALSim VMX: using backend /경로/libhalsim_vmx_studica.so`
+Check the logs:
+- [x] `HALSim VMX: using backend /path/libhalsim_vmx_studica.so`
 - [x] `HALSim VMX Extension Initialized`
-- [ ] 백엔드를 **일부러 틀리게** 지정하면(`HALSIMVMX_BACKEND=/없는/경로`) 로봇 프로그램이 확장 초기화 오류를 내고, loopback으로 조용히 넘어가지 **않는다**
+- [ ] If deliberately given an invalid backend (`HALSIMVMX_BACKEND=/nonexistent/path`), robot program reports extension initialization failure and does **not** silently fall back to loopback.
 
-장치별로 확인한다(§3의 채널표 사용). 각각 **WPILib 표준 클래스**로 읽고 쓴다.
+Check each device (using the channel map in §3). Read and write each using **WPILib standard classes**.
 
-| 장치 | 방법 | 기대 | 결과 |
+| Device | Procedure | Expected | Result |
 |---|---|---|---|
-| DigitalOutput | `set(true/false)`를 번갈아, 멀티미터/LED로 확인 | 핀이 토글된다 | |
-| DigitalInput | 점퍼로 HIGH/LOW를 줌 | `get()`이 따라간다 | |
-| AnalogInput | 가변저항/알려진 전압을 줌 | `getVoltage()`가 실제 전압과 일치한다 | **확인됨(2026-10-10, C++ 시험 프로그램, `HALSIMVMX_ANALOG_MAP="0:22"`):** 핀 22에 5V를 연결 -> `4.996 V`(40회 모두 동일). 클레임 로그 `AnalogIn 0 -> VMX channel 22`, 읽기 52,099회 CRC 불일치/실패 0. GND/3.3V 구간은 측정 안 함(0~5V 범위 가정, 스케일은 5V 한 점으로만 확인) |
-| Encoder | 손으로 돌림 | `get()`이 증가/감소, `reset()` 후 0, `setReverseDirection(true)`이면 부호가 반대 | **부분 확인됨(2026-10-11, C++ `vmx-cpp-test`를 `./gradlew deploy`로 올려 실행, `HALSIMVMX_DIO_MAP="0:0,1:1"`, FlexDIO 0/1):** 모터가 도는 동안 `wpi::Encoder::Get()`이 0.25초에 약 120씩 증가(0 -> 2492), 모터가 멈추면 값이 그대로. **reset과 `SetReverseDirection`도 확인됨(2026-10-11, 엔코더를 VMX FlexDIO 0/1에 연결, 모터 0.2):** `Reset()`하면 1388 -> 17로 돌아가 다시 증가, `SetReverseDirection(true)` 뒤에는 같은 회전 방향인데 카운트가 감소(`-1626`, `-1752`, ...)하고 방향 비트가 0이 된다. 도중에 바꾸면 현재 카운트의 부호도 같이 뒤집힌다(+1505 -> -1626). 해제하면 +4162로 돌아옴 |
-| IMU(navX) | §7 참고 | | |
+| DigitalOutput | Toggle `set(true/false)`; check with a multimeter/LED | Pin toggles | |
+| DigitalInput | Apply HIGH/LOW using a jumper | `get()` follows the input | |
+| AnalogInput | Apply voltage from a potentiometer/known source | `getVoltage()` matches the actual voltage | **Confirmed (2026-10-10, C++ test program, `HALSIMVMX_ANALOG_MAP="0:22"`):** applied 5 V to pin 22 → `4.996 V` (same across all 40 reads). Claim log `AnalogIn 0 -> VMX channel 22`; 52,099 reads, zero CRC mismatches/failures. GND/3.3 V range not measured (assumed 0–5 V; scaling verified at only one 5 V point). |
+| Encoder | Turn by hand | `get()` increments/decrements; zero after `reset()`; sign reverses after `setReverseDirection(true)` | **Partially confirmed (2026-10-11, deployed and ran C++ `vmx-cpp-test` with `./gradlew deploy`, `HALSIMVMX_DIO_MAP="0:0,1:1"`, FlexDIO 0/1):** while the motor ran, `wpi::Encoder::Get()` increased by about 120 every 0.25 s (0 → 2492), and held steady after the motor stopped. **Reset and `SetReverseDirection` also confirmed (2026-10-11, encoder wired to VMX FlexDIO 0/1, motor 0.2):** `Reset()` returned 1388 → 17 before counts rose again. After `SetReverseDirection(true)`, the count decreased for the same rotation (`-1626`, `-1752`, ...) and the direction bit became 0. Changing direction mid-run also flipped the current count's sign (+1505 → -1626). Disabling reverse returned it to +4162. |
+| IMU (navX) | See §7 | | |
 
-- [x] DIO 출력/입력, AnalogInput, Encoder가 동작한다 (2026-10-11, C++ 프로그램을 deploy해서 확인)
-- [x] Encoder A/B를 `Encoder(a,b)`로 만들었을 때 같은 채널의 `DigitalInput`과 충돌 오류가 **없다**(엔코더가 채널을 가져간다는 가정을 확인) (Encoder(0,1)와 `HALSIMVMX_DIO_MAP="0:0,1:1"`로 충돌 없이 동작)
+- [x] DIO output/input, AnalogInput, and Encoder work (confirmed by deploying and running a C++ program on 2026-10-11).
+- [x] Creating Encoder A/B with `Encoder(a,b)` does **not** cause a channel conflict with `DigitalInput` on the same channels (confirmed without conflict using `Encoder(0,1)` and `HALSIMVMX_DIO_MAP="0:0,1:1"`; the encoder claims those channels).
 
-## 7. IMU 부호와 Titan 안전
+## 7. IMU signs and Titan safety
 
-### IMU(navX) — `HALSIMVMX_IMU=1`
+### IMU (navX) — `HALSIMVMX_IMU=1`
 
-가정(미검증): navX의 yaw와 Z축 각속도는 **시계 방향이 양수**라서 부호를 뒤집어 WPILib(반시계 양수)으로 맞췄다.
-roll/pitch/X·Y축 각속도/가속도는 **부호를 그대로** 넘겼다. 이 가정을 확인한다.
+Assumption (unverified): navX yaw and Z angular rate are **clockwise-positive**, so their signs are inverted to match WPILib (counterclockwise-positive).
+Roll/pitch and X/Y angular rates/acceleration are passed through unchanged. Verify this assumption.
 
-1. 보드를 **위에서 보아 반시계 방향으로** 천천히 돌린다 → WPILib `OnboardIMU`(또는 HAL)의 yaw가 **증가**해야 한다.
-2. 보드를 앞쪽(X)으로 기울이고 다시 옆으로 기울인다 → roll/pitch 부호와 축이 기대와 맞는가.
-3. 정지 상태에서 가속도 Z가 약 **+9.8 m/s²**인가(중력 방향 부호).
+1. Slowly rotate the board **counterclockwise when viewed from above** → WPILib `OnboardIMU` (or HAL) yaw should **increase**.
+2. Tilt the front (X) and then the side of the board → do the roll/pitch axes and signs match expectations?
+3. At rest, is Z acceleration approximately **+9.8 m/s²** (gravity sign)?
 
-- [x] yaw 부호 ✔ (2026-10-11, `wpi::OnboardIMU::GetYaw()`, C++ `vmx-cpp-test`를 deploy해서 확인): 위에서 봤을 때 **반시계**로 약 90도 돌리자 yaw가 26.8 -> 132(최대) -> 112.3(정지)로 **증가**했다. 부호를 뒤집는 현재 변환이 맞다. Z축 각속도 부호는 yaw와 같은 가정으로 뒤집었지만 값을 직접 찍어 보지는 않았다
-- [ ] roll/pitch 축과 부호 ____ (미확인: 정지 상태에서 roll 0.4, pitch 2.1이 나오는 것만 확인. 앞쪽/옆쪽으로 기울이는 시험은 아직)
-- [x] 가속도 Z 부호와 크기 ✔ (정지 상태에서 `+9.7~9.8` m/s², 노이즈 약 ±0.05)
-- [ ] 보정 중/미연결일 때 값이 갱신되지 않는다(`IsCalibrating`/`IsConnected`)
+- [x] Yaw sign ✔ (confirmed 2026-10-11 using `wpi::OnboardIMU::GetYaw()` from deployed C++ `vmx-cpp-test`): after rotating about 90° **counterclockwise** viewed from above, yaw **increased** from 26.8 → 132 (maximum) → 112.3 (at rest). The current sign inversion is correct. Z angular rate is inverted based on the same assumption as yaw, but its value has not been directly captured.
+- [ ] Roll/pitch axes and signs ____ (unverified: only observed roll 0.4 and pitch 2.1 at rest; front/side tilt tests not yet done).
+- [x] Z acceleration sign and magnitude ✔ (at rest, `+9.7–9.8` m/s², about ±0.05 noise).
+- [ ] Confirm values are not updated while calibrating/disconnected (`IsCalibrating` / `IsConnected`).
 
-### Titan 안전 — `TitanEnableGuard`
+### Titan safety — `TitanEnableGuard`
 
-**실측(2026-10-11) — `Titan::Enable()`만으로는 on/off/on이 안 된다.** 처음에는 disabled로 시작해서 enable해도 모터가 안 돌았고 Titan LED가 빨강-초록-빨강으로 흔들렸다(문서상 enable이면 보라색).
-원인: `Titan::Enable(true)`는 ENABLED_FLAG를 **100 ms 주기**로, `Enable(false)`는 DISABLED_FLAG를 **10 ms 주기**로 보내고, VMX는 멈추라고 하기 전까지 주기 프레임을 계속 보낸다(`VMXCAN_SEND_PERIOD_STOP_REPEATING`). disabled로 한 번 들어가면 DISABLED_FLAG가 ENABLED_FLAG보다 10배 자주 나가서 Titan이 계속 disabled다. Studica 예제는 "시작에 enable 한 번, 끝에 disable 한 번"이라 드러나지 않았다.
-**조치:** `StudicaTitan`(`src/studica/native/include/wpi/halsim/vmx/StudicaTitan.hpp`)이 반대쪽 프레임의 주기 송신을 멈춘 뒤 `Titan::Enable()`을 부른다(`studica_drivers` 무수정). `TitanEnableGuard<StudicaTitan>`로 쓴다. 로봇에서 disabled(2초) -> enabled(3초) -> disabled -> enabled -> e-stop 순서로 모터가 enabled 구간에서만 돌았다.
-**Titan 엔코더(엔코더를 Titan 모터 0 단자에 연결, 2026-10-11):** enabled 구간에서 `GetEncoderCount`가 0.25초에 약 125씩 증가(51 -> 2590), `GetRPM`은 약 655(속도 0.2). disabled/e-stop에서는 카운트 정지, RPM 0. VMX FlexDIO에 연결했을 때 `wpi::Encoder`가 센 속도(0.25초에 약 120)와 일치한다. `ResetEncoder`는 반영에 약 0.2초 걸린다(프로그램 시작 직후 이전 카운트가 한 번 보임).
-**실측 2 — 프로그램이 죽어도 모터가 계속 돌았다 (2026-10-11).** `Titan::Enable(true)`는 ENABLED_FLAG를 VMX **보드**가 100 ms마다 반복 송신하게 맡기고, 프로세스가 `kill -9`로 죽어도 보드는 계속 보낸다. Titan은 "200 ms 동안 아무 메시지도 없으면 스스로 멈춘다"는 안전장치가 있는데, 반복 프레임이 계속 와서 마지막 속도로 계속 돌았다. `systemctl stop`(deploy가 파일을 올리기 전에 하는 일)으로 멈춰도 마찬가지였다.
-**조치:** `StudicaTitan`이 `Titan::Enable()`을 쓰지 않고 enable/disable 프레임을 **반복 송신 없이 한 번씩** 보내고(시작할 때 이전 실행이 보드에 남긴 반복 송신도 지움), `TitanEnableGuard`가 20 ms마다 `KeepAlive()`로 현재 상태를 다시 보낸다. 프로그램이 어떻게 죽든 프레임이 끊겨서 Titan이 스스로 멈춘다. `halsim_vmx` 단위 테스트 37개 통과, 실기기에서 `kill -9`와 `systemctl stop` 모두 즉시 멈춤.
-**주의:** 가드에 넘기는 객체가 `KeepAlive()`를 가져야 한다. `StudicaTitan`을 다른 클래스로 감싸서 넘길 때는 `KeepAlive()`도 전달해야 한다(안 하면 enable이 한 번만 나가고 Titan이 200 ms 뒤에 스스로 disable된다; 시험 프로그램에서 실제로 겪음).
-**부수 발견 — `kill -9`는 pigpio 자원을 샌다.** 강제 종료된 프로세스는 `gpioTerminate`를 못 불러서 GPU 메모리(mailbox)가 새고, 몇 번 쌓이면 다음 시작이 `initMboxBlock: init mbox zaps failed` / `Error initializing pigpio library`로 실패하고 프로그램이 곧 세그폴트한다. **재부팅하면 풀린다.** `robot_manager`는 SIGINT를 먼저 보내서 정상 경로에서는 안 걸리고, `stop_grace_seconds` 안에 안 끝나서 SIGKILL이 나갈 때만 해당한다.
-`GetSerialNumber()`는 Titan 응답이 오기 전에 읽으면 쓰레기 값을 돌려준다(Titan 생성 뒤 1초 대기 필요, 읽기 실패를 확인하지 않음).
+**Measured (2026-10-11) — `Titan::Enable()` alone cannot reliably do on/off/on.** Starting disabled and then enabling did not turn on the motor; the Titan LED alternated red-green-red (the documented enabled color is purple).
+Cause: `Titan::Enable(true)` sends ENABLED_FLAG every **100 ms**, while `Enable(false)` sends DISABLED_FLAG every **10 ms**. VMX keeps repeating a periodic frame until told to stop (`VMXCAN_SEND_PERIOD_STOP_REPEATING`). Once disabled, DISABLED_FLAG is sent 10× more often than ENABLED_FLAG, so Titan remains disabled. The Studica example did not expose this because it enables once at startup and disables once at the end.
+**Fix:** `StudicaTitan` (`src/studica/native/include/wpi/halsim/vmx/StudicaTitan.hpp`) stops periodic transmission of the opposite frame before calling `Titan::Enable()` (without modifying `studica_drivers`). Use `TitanEnableGuard<StudicaTitan>`. On the robot, the motor ran only while enabled in the sequence disabled (2 s) → enabled (3 s) → disabled → enabled → e-stop.
+**Titan encoder (encoder connected to Titan motor 0 terminals, 2026-10-11):** While enabled, `GetEncoderCount` increased by about 125 every 0.25 s (51 → 2590), and `GetRPM` was about 655 (speed 0.2). In disabled/e-stop, count stopped and RPM was 0. When connected to VMX FlexDIO, `wpi::Encoder` measured a matching rate (about 120 every 0.25 s). `ResetEncoder` took about 0.2 s to take effect (the previous count appeared once just after startup).
+**Measurement 2 — motor kept running after the program died (2026-10-11).** `Titan::Enable(true)` lets the VMX **board** repeat ENABLED_FLAG every 100 ms. The board continues transmitting even if the process is killed with `kill -9`. Titan's failsafe says it stops after "no messages for 200 ms," but repeated frames kept arriving, so the motor kept its last speed. The same happened when stopped with `systemctl stop` (what deploy does before uploading files).
+**Fix:** `StudicaTitan` no longer uses `Titan::Enable()`; it sends enable/disable frames **once, without periodic repeats** (also clearing repeats left on the board by an earlier process at startup). `TitanEnableGuard` resends the current state using `KeepAlive()` every 20 ms. If the process dies, frames stop and Titan stops itself. All 37 `halsim_vmx` unit tests pass; on physical hardware, both `kill -9` and `systemctl stop` stop the motor immediately.
+**Caution:** the object passed to the guard must implement `KeepAlive()`. If wrapping `StudicaTitan` in another class, forward `KeepAlive()` too (otherwise enable is sent only once and Titan disables itself after 200 ms; this happened in the test program).
+**Side effect discovered — `kill -9` leaks pigpio resources.** A forcibly killed process cannot call `gpioTerminate`, leaking GPU memory (mailbox). After several occurrences, the next startup fails with `initMboxBlock: init mbox zaps failed` / `Error initializing pigpio library` and the program soon segfaults. **Rebooting clears this.** `robot_manager` sends SIGINT first, so the normal shutdown path avoids this; it occurs only if the process fails to exit within `stop_grace_seconds` and is sent SIGKILL.
+`GetSerialNumber()` returns garbage if read before a Titan response arrives (wait 1 s after creating Titan; the read does not check for failure).
 
-사용자의 MockDS가 **`setDsAttached(true)`와 `setEnabled(...)`를 둘 다** 해야 한다(sim HAL은 DS가 attached일 때만 컨트롤 워드를 채운다).
-Titan은 `Enable(true)` 전에는 명령을 무시하고, 200 ms 동안 CAN 메시지가 없으면 스스로 멈춘다(`titan.hpp`).
+The user's MockDS must call both **`setDsAttached(true)` and `setEnabled(...)`** (the sim HAL populates the control word only when DS is attached).
+Titan ignores commands until `Enable(true)` and stops itself if it receives no CAN messages for 200 ms (`titan.hpp`).
 
-`studica_driver::Titan titan(id, freq, distPerTick, wpilibvmx::SharedVMX());` 다음 `TitanEnableGuard<studica_driver::Titan> guard{titan};` `guard.Start();`로 만든다.
-(사용자 코드는 enabled 동안 150 ms 이내로 `SetSpeed`를 계속 보내야 한다.)
+```cpp
+studica_driver::Titan titan(id, freq, distPerTick, wpilibvmx::SharedVMX());
+TitanEnableGuard<studica_driver::Titan> guard{titan};
+guard.Start();
+```
 
-- [x] disabled에서 `SetSpeed`를 보내도 **모터가 안 돈다** (로봇에서 확인, 2026-10-11)
-- [x] enabled로 바꾸면 돈다
-- [x] 다시 disabled로 바꾸면 **즉시** 멈춘다
-- [x] E-stop이면 멈춘다
-- [x] 로봇 프로그램을 `kill -9`로 죽이면 모터가 멈춘다 (2026-10-11, 킬 직후 멈춤. 정확한 시간은 재지 않았고 눈으로 확인). **처음에는 멈추지 않았다**: 아래 "실측 2" 참고
-- [x] `systemctl stop robot_manager`(SIGINT로 종료) 직후 모터가 멈춘다 (2026-10-11)
-- [ ] `kill -TERM`: HAL의 `SIGTERM` 처리는 VMX/pigpio만 정리하고 프로세스를 끝내지 않는다(앞의 `gdb` 측정). 그 상태에서 Titan이 어떻게 되는지는 시험 안 함. `robot_manager`는 `SIGINT`를 먼저 보내서 이 경로를 타지 않는다
+(User code must keep sending `SetSpeed` within 150 ms while enabled.)
 
-## 8. `robot_manager`와 deploy end-to-end
+- [x] Sending `SetSpeed` while disabled does **not** turn the motor (confirmed on robot, 2026-10-11).
+- [x] Enabling turns the motor on.
+- [x] Disabling again stops it **immediately**.
+- [x] E-stop stops it.
+- [x] Killing the robot program with `kill -9` stops the motor (2026-10-11; visually confirmed immediately after kill, exact time not measured). **It did not stop in the initial implementation:** see "Measurement 2" above.
+- [x] `systemctl stop robot_manager` (SIGINT shutdown) stops the motor immediately (2026-10-11).
+- [ ] `kill -TERM`: HAL's SIGTERM handler cleans up VMX/pigpio but does not exit (per `gdb` measurement above). Titan behavior in this state has not been tested. `robot_manager` sends SIGINT first and avoids this path.
 
-### `robot_manager` (레포: `W4Studica/Robot-Manager`, README의 설치 절차)
+## 8. End-to-end `robot_manager` and deploy
 
-- [x] 설치 후 `systemctl is-active robot_manager`가 `active` (로봇에서 확인됨. 단, `robotCommand`는 아직 없어서 프로그램을 돌려 본 건 아님)
-- [x] `./install.sh --sudoers`가 적용되고 `sudo -n systemctl enable robot_manager`가 비밀번호 없이 된다 (로봇에서 확인됨)
-- [x] `/home/<user>/robotCommand`가 없으면 로그에 한 번만 대기 메시지가 나온다 (로봇에서 확인)
-- [x] 간단한 `robotCommand`를 두면 실행된다. `journalctl -u robot_manager -f` (로봇에서 확인: `started robot program (pid ...)`)
-- [ ] 프로세스를 죽이면 다시 실행된다(크래시 반복 시 간격이 1→10초로 늘어난다)
-- [ ] `sudo systemctl stop robot_manager`가 로봇 프로세스 트리까지 정리한다(`pgrep -af robotCommand`/자식 확인)
-- [x] 로봇 프로그램이 **root로** 실행된다 (로봇에서 확인: `user=root`)
-- [x] `config.json`의 `env`가 로봇 프로세스에 들어간다 (로봇에서 확인: `LD_PRELOAD=/opt/robot_manager/lib/libvmx_gpio_isr_shim.so`)
-- [ ] 플랫폼 프로필: `kernel_regex`가 `uname -r`과 일치하면 프로필의 환경변수가 들어간다 (프로필 `env`는 같은 코드 경로이나 아직 프로필 자체는 비어 있어 시험 안 함) -> 시험하지 않는다: OS 이미지를 고정하므로 커널별 프로필이 필요 없다. 기능은 남겨 둔다
+### `robot_manager` (repository: `W4Studica/Robot-Manager`; follow its README installation procedure)
 
-### GradleRIO `./gradlew deploy` (PC에서)
+- [x] After installation, `systemctl is-active robot_manager` reports `active` (confirmed on robot; no `robotCommand` existed yet, so the robot program itself was not run).
+- [x] `./install.sh --sudoers` is applied and `sudo -n systemctl enable robot_manager` succeeds without a password (confirmed on robot).
+- [x] If `/home/<user>/robotCommand` does not exist, the log prints a waiting message once (confirmed on robot).
+- [x] Adding a simple `robotCommand` runs it. Check with `journalctl -u robot_manager -f` (confirmed on robot: `started robot program (pid ...)`).
+- [ ] Program restarts after being killed (restart interval increases from 1 to 10 seconds after repeated crashes).
+- [ ] `sudo systemctl stop robot_manager` cleans up the robot process tree too (check `pgrep -af robotCommand` / children).
+- [x] Robot program runs as **root** (confirmed on robot: `user=root`).
+- [x] The `env` from `config.json` reaches the robot process (confirmed on robot: `LD_PRELOAD=/opt/robot_manager/lib/libvmx_gpio_isr_shim.so`).
+- [ ] Platform profile: if `kernel_regex` matches `uname -r`, profile environment variables are applied. The profile's `env` uses the same code path, but no profile has been populated yet → **will not test:** the OS image is fixed, so per-kernel profiles are unnecessary. Keep the feature.
 
-`GradleRIO/VMX.md`의 예시 `build.gradle`을 쓴다. `username`/`password`/주소는 직접 넣는다(기본값 없음).
+### GradleRIO `./gradlew deploy` (from PC)
 
-- [x] SSH 접속과 `sudo systemctl`/`sudo ldconfig`가 **비밀번호 없이** 된다(sudoers) (deploy가 `sudo systemctl`/`ldconfig`를 비밀번호 없이 실행함. `install.sh --sudoers`)
-- [x] `./gradlew deploy`가 끝까지 성공한다
-- [x] VMX에 `classpath/`, `third-party/lib/`, `robotCommand`, `robotCommand.args`가 올라간다
-- [x] 서비스가 stop → 파일 업로드 → start 순서로 재시작되고 새 프로그램이 돈다
-- [x] `HALSIM_EXTENSIONS`/`HALSIMVMX_*` 환경변수가 `robotCommand`에 들어 있다
-- [x] (C++) `WPILibNativeArtifact`로 C++ 로봇 프로그램도 올라간다 — **지금까지 실제 빌드로 쓴 적 없음** (2026-10-11, `GradleRIO/examples/vmx-cpp`)
+Use the example `build.gradle` in `GradleRIO/VMX.md`. Supply `username` / `password` / address yourself (no defaults).
 
-### 네트워크와 deploy 주소 (2026-10-11, 실기기)
+- [x] SSH and `sudo systemctl` / `sudo ldconfig` work **without a password** (sudoers; deploy runs both sudo commands without a password using `install.sh --sudoers`).
+- [x] `./gradlew deploy` completes successfully.
+- [x] `classpath/`, `third-party/lib/`, `robotCommand`, and `robotCommand.args` are uploaded to VMX.
+- [x] Service restarts in stop → upload files → start order, and the new program runs.
+- [x] `HALSIM_EXTENSIONS` / `HALSIMVMX_*` environment variables are included in `robotCommand`.
+- [x] (C++) C++ robot program also deploys using `WPILibNativeArtifact` — **not yet used in a real build at the time** (2026-10-11, `GradleRIO/examples/vmx-cpp`).
 
-- [x] `setupHotspot`으로 Wi-Fi AP가 뜨고 PC가 DHCP(`10.12.34.X`)를 받아 `10.TE.AM.2`로 SSH가 된다
-- [x] 5GHz(채널 36)로 바꾸고 SSID 접두사를 바꿨다(`WorldSkills-1234`). SSH 세션 안에서 실행해도 로봇이 3초 뒤 `systemd-run`으로 직접 적용한다
-- [x] 같은 이름 프로필이 둘이면 NetworkManager가 옛것을 켠다 → UUID로 켜고 옛 프로필을 지운다
-- [x] 비표준 5GHz 채널(34)을 고르면 AP가 안 뜬다 → 표준 채널만 허용, 기본 36
-- [x] `./gradlew deploy` 하나로 성공(SDK 자동 가져오기, 팀 번호 주소 `10.12.34.2`)
-- **PC의 Wi-Fi 절전(`Power save: on`)이 켜져 있으면** TCP 첫 응답(SSH 배너)이 1~10초 늦거나 시간 초과가 나서 deploy 발견이 실패했다. `iw dev <if> set power_save off`로 해결. 우리 코드는 접속 제한을 30초로 늘리고 SDK 가져오기는 3라운드 재시도한다.
-- [ ] 미확인: 유선(`172.22.11.2`) 경로, 폰 테더링 인터넷(로봇이 인터넷에 못 나갔음), `install.sh --network`로 새 로봇 전환, CPU 최대 성능 서비스 재부팅 후 유지
+### Network and deploy address (2026-10-11, physical hardware)
 
-## 결과 기록표
+- [x] `setupHotspot` starts a Wi-Fi AP; PC receives DHCP (`10.12.34.X`) and can SSH to `10.TE.AM.2`.
+- [x] Changed to 5 GHz (channel 36) and changed SSID prefix (`WorldSkills-1234`). Applying it from within an SSH session still works: robot applies it itself via `systemd-run` after 3 seconds.
+- [x] If two NetworkManager profiles share a name, it activates the old one → activate by UUID and remove the old profile.
+- [x] AP does not start on non-standard 5 GHz channel 34 → allow only standard channels; default to 36.
+- [x] `./gradlew deploy` alone succeeds (automatic SDK fetch, team-number address `10.12.34.2`).
+- **If PC Wi-Fi power saving (`Power save: on`) is enabled**, the first TCP response (SSH banner) is delayed by 1–10 seconds or times out, causing deploy discovery to fail. Fixed with `iw dev <if> set power_save off`. Our code increases the connection timeout to 30 seconds and retries SDK fetch in 3 rounds.
+- [ ] Unverified: wired (`172.22.11.2`) path, phone-tethered Internet (robot could not access Internet), moving a new robot with `install.sh --network`, and whether the CPU-performance service persists after reboot.
 
-| 항목 | 결과 | 비고 |
+## Results table
+
+| Item | Result | Notes |
 |---|---|---|
-| §0 OS / 커널 / Pi 모델 | | |
-| §0 glibc / g++ / java | | |
-| §1 Studica 스택 동작 | ✔ / ✘ | |
-| §2 `VMXPi` 두 개 | 첫 ____ / 둘째 ____ | |
-| §3 핀 오프셋 | 있음(버전 ____, 값 ____) / 없음 | |
-| §4 플러그인 빌드 | ✔ / ✘ | |
-| §5 glibc 호환 | ✔ / ✘ | |
+| §0 OS / kernel / Pi model | | |
+| §0 glibc / g++ / Java | | |
+| §1 Studica stack works | ✔ / ✘ | |
+| §2 Two `VMXPi` instances | First ____ / second ____ | |
+| §3 Pin offset | Yes (version ____, value ____) / no | |
+| §4 Plugin build | ✔ / ✘ | |
+| §5 glibc compatibility | ✔ / ✘ | |
 | §6 DIO/Analog/Encoder | | |
-| §7 IMU 부호 | | |
-| §7 Titan 안전 | | |
+| §7 IMU signs | | |
+| §7 Titan safety | | |
 | §8 `robot_manager` | | |
 | §8 deploy | | |
 
-## 결과에 따라 고칠 문서
+## Documents to update based on results
 
-- §1 실패 → `CLAUDE.md`의 OS 결정, `GradleRIO/VMX.md`의 glibc 위험 항목
-- §2 → `DESIGN.md` §3 "아직 모르는 것"과 `SharedVMX.hpp` 설명(권고 vs 필수)
-- §3 → `DESIGN.md` §4 채널표, `robot_manager/config.example.json`/README의 프로필
-- §4 → `StudicaBackend.cpp`, 그리고 이 문서의 빌드 명령(미검증 표시 제거)
-- §5 → `GradleRIO/VMX.md` Known risks
-- §7 IMU → `HALSimVMX.cpp`의 `PollImu`와 `DESIGN.md` §1 IMU 행
-- 모든 "미검증"/"미컴파일" 표기를 확인한 항목에서 지운다
+- §1 failure → OS decision in `CLAUDE.md` and glibc risk in `GradleRIO/VMX.md`.
+- §2 → §3 "Still unknown" in `DESIGN.md` and `SharedVMX.hpp` guidance (recommendation vs requirement).
+- §3 → channel map in §4 of `DESIGN.md`, and profile in `robot_manager/config.example.json` / README.
+- §4 → `StudicaBackend.cpp` and the build commands in this document (remove unverified labels).
+- §5 → Known risks in `GradleRIO/VMX.md`.
+- §7 IMU → `PollImu` in `HALSimVMX.cpp` and the IMU row in §1 of `DESIGN.md`.
+- Remove "unverified" / "not compiled" labels from every item that has since been confirmed.
