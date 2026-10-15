@@ -21,7 +21,7 @@ def main():
     sdk_libs = args.sdk / 'usr/local/lib/vmxpi'
     if not (sdk_headers / 'VMXPi.h').is_file() or not (sdk_libs / 'libvmxpi_hal_cpp.so').is_file():
         parser.error('Incomplete robot VMX SDK')
-    for name in ['libwpiHal.so', 'libwpiutil.so']:
+    for name in ['libwpiHal.so', 'libwpiutil.so', 'libwpiHald.so', 'libwpiutild.so']:
         if not (args.wpilib_libs / name).is_file():
             parser.error('Missing WPILib ARM64 library: ' + name)
     args.output.mkdir(parents=True, exist_ok=True)
@@ -45,6 +45,12 @@ def main():
                         ['-I' + str(extension / 'src/main/native/include'), '-I' + str(root / 'hal/src/main/native/include'),
                          '-I' + str(root / 'wpiutil/src/main/native/include'), '-L' + str(args.wpilib_libs),
                          '-Wl,-rpath-link,' + str(args.wpilib_libs), '-lwpiHal', '-lwpiutil', '-ldl'])
+        # Debug WPILib has distinct SONAMEs. Reusing the release extension would
+        # load a second HAL and disconnect the hardware from the robot's HAL state.
+        compile_library('libhalsim_vmxd.so', sorted((extension / 'src/main/native/cpp').glob('*.cpp')),
+                        ['-O0', '-g', '-I' + str(extension / 'src/main/native/include'), '-I' + str(root / 'hal/src/main/native/include'),
+                         '-I' + str(root / 'wpiutil/src/main/native/include'), '-L' + str(args.wpilib_libs),
+                         '-Wl,-rpath-link,' + str(args.wpilib_libs), '-lwpiHald', '-lwpiutild', '-ldl'])
         headers = staging / 'include'
         headers.mkdir()
         for source in drivers.glob('*.hpp'):

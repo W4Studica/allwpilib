@@ -24,6 +24,11 @@ python3 tools/w4studica/build_vmx_runtime.py \
   --output /path/to/staging/vmx
 ```
 
+The ARM64 library directory must contain release and debug WPILib libraries.
+The runtime builder creates separate `libhalsim_vmx.so` and `libhalsim_vmxd.so`
+extensions matching the release/debug HAL SONAMEs. Both variants share the same
+Studica backend and driver library, which do not depend on the WPILib HAL.
+
 The runtime builder leaves `studica_drivers` unchanged. It packages only the
 newly built extension, backend, Studica drivers, public project headers and
 license notices. It does not redistribute `VMXPi.h`, the VMX HAL or the SDK.
