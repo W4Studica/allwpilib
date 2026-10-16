@@ -3,6 +3,7 @@
 // the WPILib BSD license file in the root directory of this project.
 
 #include "wpi/halsim/vmx/TitanEnableGuard.hpp"
+#include "wpi/halsim/vmx/ControlLoopWatchdog.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -187,4 +188,58 @@ TEST_CASE("A Titan without KeepAlive() still works", "[halsim_vmx][titan]") {
   guard.Poll();
   guard.Poll();
   REQUIRE(titan.Calls() == std::vector<bool>{true});
+}
+
+TEST_CASE("Stalled control or DS input disables Titan even with cached enabled state",
+          "[halsim_vmx][titan][watchdog]") {
+  using namespace std::chrono_literals;
+  using Watchdog = wpilibvmx::ControlLoopWatchdog;
+  using Guard = TitanEnableGuard<KeepAliveTitan>;
+  DsRestore restore;
+  HALSIM_SetDriverStationDsAttached(true);
+  HALSIM_SetDriverStationEnabled(true);
+  Watchdog::Clock::time_point now{};
+  Watchdog watchdog{100ms, 150ms, [&] { return now; }};
+  KeepAliveTitan titan;
+  Guard guard{titan, [&] { return Guard::HalEnabled() && watchdog.IsFresh(); }};
+
+  guard.Poll();
+  REQUIRE_FALSE(titan.Calls().back());
+  watchdog.FeedControlLoop();
+  guard.Poll();
+  REQUIRE_FALSE(titan.Calls().back());
+  watchdog.FeedDriverStation();
+  guard.Poll();
+  REQUIRE(titan.Calls().back());
+  guard.Poll();
+  REQUIRE(titan.KeepAlives() == 2);  // one disabled, one enabled keepalive
+
+  // Main loop stops, but DS input and the guard keep running.
+  now += 100ms;
+  watchdog.FeedDriverStation();
+  guard.Poll();
+  REQUIRE(Guard::HalEnabled());
+  REQUIRE_FALSE(titan.Calls().back());
+
+  watchdog.FeedControlLoop();
+  guard.Poll();
+  REQUIRE(titan.Calls().back());
+  // DS reception stops while the main loop and guard keep running.
+  now += 150ms;
+  watchdog.FeedControlLoop();
+  guard.Poll();
+  REQUIRE(Guard::HalEnabled());
+  REQUIRE_FALSE(titan.Calls().back());
+  watchdog.FeedDriverStation();
+  guard.Poll();
+  REQUIRE(titan.Calls().back());
+  HALSIM_SetDriverStationEStop(true);
+  guard.Poll();
+  REQUIRE_FALSE(titan.Calls().back());
+}
+
+TEST_CASE("Watchdog rejects nonpositive deadlines", "[halsim_vmx][titan][watchdog]") {
+  using namespace std::chrono_literals;
+  REQUIRE_THROWS_AS((wpilibvmx::ControlLoopWatchdog{0ms, 100ms}), std::invalid_argument);
+  REQUIRE_THROWS_AS((wpilibvmx::ControlLoopWatchdog{100ms, -1ms}), std::invalid_argument);
 }

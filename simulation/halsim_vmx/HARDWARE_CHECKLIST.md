@@ -314,12 +314,42 @@ The user's MockDS must call both **`setDsAttached(true)` and `setEnabled(...)`**
 Titan ignores commands until `Enable(true)` and stops itself if it receives no CAN messages for 200 ms (`titan.hpp`).
 
 ```cpp
+#include "wpi/halsim/vmx/ControlLoopWatchdog.hpp"
+#include "wpi/halsim/vmx/StudicaTitan.hpp"
+#include "wpi/halsim/vmx/TitanEnableGuard.hpp"
+
+using namespace std::chrono_literals;
 studica_driver::Titan titan(id, freq, distPerTick, wpilibvmx::SharedVMX());
-TitanEnableGuard<studica_driver::Titan> guard{titan};
+wpilibvmx::StudicaTitan switcher{titan, id};
+// Example deadlines: tune and measure for the robot's control/DS periods.
+wpilibvmx::ControlLoopWatchdog watchdog{100ms, 150ms};
+using Guard = wpilibvmx::TitanEnableGuard<wpilibvmx::StudicaTitan>;
+Guard guard{switcher, [&] { return Guard::HalEnabled() && watchdog.IsFresh(); }};
 guard.Start();
+// After each successfully completed control cycle: watchdog.FeedControlLoop();
+// After each new valid packet in the team's MockDS: watchdog.FeedDriverStation();
 ```
 
 (User code must keep sending `SetSpeed` within 150 ms while enabled.)
+
+The default guard observes cached HAL state only; it cannot detect a stalled main
+loop or stale DS reception by itself. The optional `ControlLoopWatchdog` keeps
+these two deadlines separate and starts disabled until both sources have arrived.
+Feed it from the actual sources, never from the guard or a timer reading cached
+enabled state. It does not implement MockDS. Keep the watchdog and Titan switcher
+alive until after the guard is stopped/destroyed.
+
+PC regression tests verify startup, each deadline independently, recovery with
+fresh heartbeats and E-stop precedence while cached enabled remains true.
+They do not measure a physical stop time. On the fixed robot image:
+
+- [ ] Stop control-cycle heartbeats while DS packets and the guard continue;
+      record disable transmission and actual motor stop latency.
+- [ ] Stop valid DS packets while the control loop and guard continue; record
+      stop latency, then verify reconnect behavior.
+- [ ] Verify that guard scheduling delays, CAN errors and main-loop logging load
+      do not violate the chosen stop budget. A deadline is evaluated at the next
+      guard poll; Linux scheduling and CAN delivery add latency.
 
 - [x] Sending `SetSpeed` while disabled does **not** turn the motor (confirmed on robot, 2026-10-11).
 - [x] Enabling turns the motor on.

@@ -31,6 +31,9 @@ namespace wpilibvmx {
  * (simulated) Driver Station, for example the team's own MockDS. In the simulation HAL the
  * control word is only non-zero while the DS is marked attached, so such a MockDS must set
  * DsAttached as well as Enabled (DriverStationSim.setDsAttached(true)).
+ * Cached enabled state does not detect a stalled robot loop or lost DS updates.
+ * Compose the source with ControlLoopWatchdog::IsFresh() to cover those cases;
+ * feed its two heartbeats from the control loop and new DS packets respectively.
  *
  * Do not pass a studica_driver::Titan directly: its Enable() starts periodic CAN frames on the VMX board that are
  * never cancelled. After the first disable the Titan can no longer be enabled, and after the program has died (kill -9,
