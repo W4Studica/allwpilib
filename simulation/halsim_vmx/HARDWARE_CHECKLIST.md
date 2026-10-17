@@ -1,6 +1,6 @@
 # VMX Hardware Verification Checklist
 
-On PC, 35 `halsim_vmx` tests, the `GradleRIO` tests, and 13 `robot_manager` tests passed. **Nothing had yet been verified on physical VMX hardware when this checklist was started.**
+This checklist was started before anything had been verified on physical hardware. Hardware results were recorded on one development VMX-pi on 2026-10-10 to 11 and are summarized in the **Results table** at the end; unchecked `[ ]` items are still open. Later work (`ControlLoopWatchdog`, RioLog, installer hardening, release builds) has PC tests only. Run the PC tests (see `CLAUDE.md`) for current counts instead of trusting a number written here.
 This document lists the hardware checks in order. Each step describes what to do, the expected result, and what to do if it fails.
 
 - Check `[ ]` items as they are completed and fill in the **Results table** at the end.
@@ -375,7 +375,7 @@ They do not measure a physical stop time. On the fixed robot image:
 
 ### GradleRIO `./gradlew deploy` (from PC)
 
-Use the example `build.gradle` in `GradleRIO/VMX.md`. Supply `username` / `password` / address yourself (no defaults).
+Use the example `build.gradle` in `GradleRIO/VMX.md`. The W4Studica `VmxPi` target defaults to the login `ubuntu` / `password` (override with `VMX_USER` / `VMX_PASSWORD` in the example); the address comes from `team` (`172.22.11.2` wired, `10.TE.AM.2` Wi-Fi AP) or `VMX_HOST`.
 
 - [x] SSH and `sudo systemctl` / `sudo ldconfig` work **without a password** (sudoers; deploy runs both sudo commands without a password using `install.sh --sudoers`).
 - [x] `./gradlew deploy` completes successfully.
@@ -396,24 +396,26 @@ Use the example `build.gradle` in `GradleRIO/VMX.md`. Supply `username` / `passw
 
 ## Results table
 
+Development VMX-pi, 2026-10-10 to 11 (one robot; not a statement about other images).
+
 | Item | Result | Notes |
 |---|---|---|
-| §0 OS / kernel / Pi model | | |
-| §0 glibc / g++ / Java | | |
-| §1 Studica stack works | ✔ / ✘ | |
-| §2 Two `VMXPi` instances | First ____ / second ____ | |
-| §3 Pin offset | Yes (version ____, value ____) / no | |
-| §4 Plugin build | ✔ / ✘ | |
-| §5 glibc compatibility | ✔ / ✘ | |
-| §6 DIO/Analog/Encoder | | |
-| §7 IMU signs | | |
-| §7 Titan safety | | |
-| §8 `robot_manager` | | |
-| §8 deploy | | |
+| §0 OS / kernel / Pi model | Ubuntu 26.04.1, `7.0.0-1020-raspi`, Pi 4 Model B Rev 1.5 | No `/sys/class/gpio` (`CONFIG_GPIO_SYSFS` off) |
+| §0 glibc / g++ / Java | glibc 2.43, g++ 15.2, Java 25 (Python 3.14) | |
+| §1 Studica stack works | ✔ | `vmx-hal` installed; DIO/Analog/Encoder/IMU/Titan run |
+| §2 Two `VMXPi` instances | First ✔ / second ✘ | SPI CRC errors, segfault at exit; use `SharedVMX()` |
+| §3 Pin offset | No offset observed | DIO loopback, AnalogIn, Encoder work with plain `VMXChannelIndex`; printed-pin correspondence unchecked |
+| §4 Plugin build | ✔ | Studica backend builds and loads |
+| §5 glibc compatibility | ✔ | Published `linuxarm64` `libwpiHal` needs ≤ glibc 2.34 |
+| §6 DIO/Analog/Encoder | ✔ | AnalogIn 5 V → 4.996 V; Encoder on VMX FlexDIO and Titan, reset, reverse direction |
+| §7 IMU signs | Yaw ✔, Z accel ✔; roll/pitch and Z rate ✘ open | |
+| §7 Titan safety | ✔ for guard + program death; watchdog latency open | Motor stops with the program (`kill -9`, `systemctl stop`) |
+| §8 `robot_manager` | ✔ SIGINT stop, service, automatic `LD_AUDIT`; restart interval / child cleanup open | `kill -TERM` path open |
+| §8 deploy | ✔ | PC cross build + `./gradlew deploy` (C++) |
 
 ## Documents to update based on results
 
-- §1 failure → OS decision in `CLAUDE.md` and glibc risk in `GradleRIO/VMX.md`.
+- Any new failure → the matching statement in `CLAUDE.md`, `DESIGN.md`, `GradleRIO/VMX.md` and `robot_manager/README.md` (earlier results have already been propagated; check these four first when a row above changes).
 - §2 → §3 "Still unknown" in `DESIGN.md` and `SharedVMX.hpp` guidance (recommendation vs requirement).
 - §3 → channel map in §4 of `DESIGN.md`, and profile in `robot_manager/config.example.json` / README.
 - §4 → `StudicaBackend.cpp` and the build commands in this document (remove unverified labels).
