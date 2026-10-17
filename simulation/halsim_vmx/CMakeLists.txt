@@ -8,6 +8,7 @@ set(halsim_vmx_src
     src/main/native/cpp/DlBackend.cpp
     src/main/native/cpp/HALSimVMX.cpp
     src/main/native/cpp/LoopbackBackend.cpp
+    src/main/native/cpp/TerminationHandlers.cpp
     src/main/native/cpp/main.cpp
 )
 

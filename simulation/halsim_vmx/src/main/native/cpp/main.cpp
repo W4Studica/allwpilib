@@ -10,6 +10,7 @@
 #include "wpi/hal/Extensions.h"
 #include "wpi/halsim/vmx/ChannelMap.hpp"
 #include "wpi/halsim/vmx/HALSimVMX.hpp"
+#include "wpi/halsim/vmx/TerminationHandlers.hpp"
 #include "wpi/halsim/vmx/VmxBackend.hpp"
 
 using namespace wpilibvmx;
@@ -61,6 +62,10 @@ int HALSIM_InitExtension(void) {
   if (!backend) {
     return -1;
   }
+
+  // The VMX HAL has installed its SIGINT/SIGTERM handlers by now (creating the backend opened it): make them end the
+  // process, which they do not do on their own.
+  InstallTerminationHandlers();
 
   gSim = std::make_unique<HALSimVMX>(std::move(backend), std::move(config));
   gSim->Start();

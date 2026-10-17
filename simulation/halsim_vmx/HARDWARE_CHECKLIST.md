@@ -253,6 +253,18 @@ The C++ project (`vmx-cpp-test`) **cross-compiles** `halsim_vmx` and the Studica
 - `tools/build_on_robot.sh` is now a fallback if PC cross-compilation fails. Java projects still have no equivalent (there is nowhere to build the extension).
 - [ ] Still outstanding: publish to Maven (this approach directly points the project at the `allwpilib` source directory) and test a Java project.
 
+### 6d-4. A WPILib program did not stop on SIGINT/SIGTERM (2026-10-17)
+
+MEASURED on a VMX-pi with a TimedRobot program deployed from the VS Code extension: after `kill -INT`, the VMX HAL printed `Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit]` (pigpio was cleaned up by `gpioTerminate`), but the process stayed alive indefinitely (`SigCgt` had SIGINT and SIGTERM). `robot_manager` waited its whole 5 s grace period and sent SIGKILL, so every deploy spent 5 s in `systemctl stop`. A WPILib desktop program has no signal handler of its own and normally dies of the default action; the HAL's handler replaced it and returns.
+
+Fix: `InstallTerminationHandlers()` (extension start, after the backend opened the VMX HAL) chains to the existing handler and then restores the default action and re-raises, so the process ends right after the hardware clean-up. PC tests (4 cases) cover SIGINT, SIGTERM, no previous handler and an ignored signal.
+
+- [ ] On the robot, with the new `libhalsim_vmx.so`: `time sudo systemctl stop robot_manager` is well under 5 s and the journal says `robot program stopped by SIGINT` (not `killed`).
+- [ ] The next start does not fail with `initMboxBlock` (pigpio was released).
+- [ ] Titan: stopping the service while a motor runs stops it within 200 ms (the guard's destructor does not run on this path).
+
+Also seen: one realtime thread (priority -50) used about 70 % of a core in the idle TimedRobot program, and `robot_manager` consumed 2 h 25 min CPU over 2 h 18 min. Not explained yet (MrcLib Driver Station polling with the emulated LSE atomics is a suspect: `top` showed 21 % system time).
+
 ### 6e. Existing verification items
 
 Check with a minimal Java robot project (or the result of `./gradlew deploy` from PC). Manual run example (command untested):
