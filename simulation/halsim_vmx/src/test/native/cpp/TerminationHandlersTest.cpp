@@ -5,6 +5,7 @@
 #include "wpi/halsim/vmx/TerminationHandlers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 
 #if !defined(_WIN32)
 
@@ -88,6 +89,29 @@ TEST_CASE("a signal without a handler keeps its default action", "[halsim_vmx]")
   REQUIRE(WIFSIGNALED(status));
   REQUIRE(WTERMSIG(status) == SIGTERM);
   REQUIRE_FALSE(ran);
+}
+
+void HangingHandler(int) {
+  for (;;) {
+    pause();  // the VMX HAL clean-up stuck inside exit()
+  }
+}
+
+TEST_CASE("a previous handler that hangs is cut short by SIGALRM", "[halsim_vmx]") {
+  bool ran = false;
+  auto start = std::chrono::steady_clock::now();
+  int status = RunInChild(
+      [] {
+        signal(SIGTERM, HangingHandler);
+        wpilibvmx::InstallTerminationHandlers();
+        raise(SIGTERM);
+        pause();
+      },
+      &ran);
+  auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  REQUIRE(WIFSIGNALED(status));
+  REQUIRE(WTERMSIG(status) == SIGALRM);
+  REQUIRE(seconds < 3.0);
 }
 
 TEST_CASE("an ignored signal stays ignored", "[halsim_vmx]") {

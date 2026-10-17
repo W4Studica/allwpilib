@@ -16,7 +16,8 @@ namespace wpilibvmx {
  *
  * Call this after the VMX HAL has been initialised (after the backend was created). For each of SIGINT and SIGTERM that
  * already has a handler, it installs one that calls the previous handler (the hardware clean-up), then restores the
- * default action and re-raises the signal, so the process ends like any other desktop robot program. Signals without a
+ * default action and re-raises the signal, so the process ends like any other desktop robot program. A clean-up that hangs
+ * is cut short after one second (SIGALRM). Signals without a
  * handler (a PC simulation with the loopback backend) are left alone. Does nothing on Windows.
  */
 void InstallTerminationHandlers();
