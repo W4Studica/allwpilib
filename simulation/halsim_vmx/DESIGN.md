@@ -1,157 +1,85 @@
-# halsim_vmx Design and Mapping
+# halsim_vmx design
 
-> Status: **Implemented; core paths verified on one development VMX-pi** (2026-10-10 to 11). Written after reviewing `studica_drivers` (Studica-Robotics/ROS2 `f97edec`) and allwpilib `2027.0.0-alpha-7` headers.
-> Measured results and the remaining unverified items are in `HARDWARE_CHECKLIST.md`, which is the authority when the two documents disagree. Items marked "needs verification" below have not been hardware-tested.
-> Verified: DIO, AnalogIn, Encoder (VMX FlexDIO and Titan), Titan + `TitanEnableGuard`, IMU yaw sign and Z acceleration, `StudicaBackend.cpp` build and run, the PC cross build + `./gradlew deploy`.
-> Environment variables read by the extension: `HALSIMVMX_BACKEND`, `HALSIMVMX_DIO_MAP`, `HALSIMVMX_ANALOG_MAP`, `HALSIMVMX_IMU`.
+`halsim_vmx` is a HAL simulation extension that connects WPILib's standard classes to a Studica VMX-pi. Measured results and open items are in `HARDWARE_CHECKLIST.md`.
 
-## 0. Core decision: call Studica APIs directly
-
-Robot code calls existing Studica classes such as `studica_driver::Titan`, `Servo`, `Imu`, and `DIO` **directly**. These classes access hardware through `VMXPi` (`vmxpi_hal_cpp`) and therefore bypass the simulation HAL.
-
-The design has two paths:
+## 1. Two paths
 
 ```text
-Path A (devices without a WPILib equivalent)
-                   Robot code --studica_driver::*--> vmxpi_hal_cpp --> VMX hardware
-Path B (standard WPILib classes; the main goal)
-                   Robot code --WPILib classes--> sim HAL --halsim_vmx--> studica_driver::* --> VMX
-Shared             robot_manager: start/restart programs, RioLog, LSE emulation
-                   (MockDS is user-provided and out of scope)
+Path A (devices without a WPILib equivalent, such as Titan)
+   robot code --studica_driver::*--> vmxpi_hal_cpp --> VMX hardware
+Path B (standard WPILib classes)
+   robot code --WPILib classes--> sim HAL --halsim_vmx--> studica_driver::* --> VMX
 ```
 
-- **Path A does not need halsim_vmx.** It needs (1) link the `studica_drivers` library, (2) pass along the enabled state (§2), and (3) share one `VMXPi` per process (§3).
-- **Path B (`halsim_vmx`) connects as many WPILib standard classes as practical.** (Decision made.) The goal is to let code, examples, and third-party libraries using classes such as `DigitalInput`, `Encoder`, `AnalogInput`, and `PWM` run on VMX unchanged. It follows the `halsim_xrp` approach but calls Studica classes in the same process instead of using UDP.
-- **Both paths must share the same single `VMXPi` in the same process** (§3). `halsim_vmx` owns it and passes that instance to user-created Studica objects.
+- Path B lets code, examples and third-party libraries that use `DigitalInput`, `Encoder`, `AnalogInput` and the IMU run on a VMX unchanged. It follows `halsim_xrp`, but calls the Studica classes in the same process instead of sending UDP.
+- Both paths share **one `VMXPi` per process**. Two break the SPI link (measured), so Studica objects always get `wpilibvmx::SharedVMX()`; their default arguments would create another `VMXPi`, and `studica_drivers` is never modified.
+- Only the robot program opens the VMX (pigpio, root, one process). `robot_manager` does not.
+- Robot programs are C++ only.
 
-## 0.5 Backend plugin (`dlopen`)
+Environment variables read by the extension: `HALSIMVMX_BACKEND`, `HALSIMVMX_DIO_MAP`, `HALSIMVMX_ANALOG_MAP`, `HALSIMVMX_IMU`.
 
-`libhalsim_vmx.so` does not depend on the VMX header (`VMXPi.h`, available only on the VMX image). A separate backend plugin (`.so`) handles hardware access and is loaded with `dlopen` when its path is provided in `HALSIMVMX_BACKEND`. This allows the extension itself to be cross-compiled for `linuxarm64`, while the Studica backend (`libhalsim_vmx_studica.so`) is built once on the VMX (`-DWPILIB_WITH_STUDICA=ON`; C++20 required).
+## 2. Backend plugin
 
-- The interface is a **C function table** (`BackendApi.h`, ABI version 1), so the two libraries may use different compilers/libstdc++ versions (WPILib's trixie toolchain versus the VMX Ubuntu toolchain). The plugin exports `wpilibvmx_CreateBackendV1` / `wpilibvmx_DestroyBackendV1`. Any `VmxBackend` can be wrapped and exported using `MakeBackendApi` in `BackendPlugin.hpp`.
-- If `HALSIMVMX_BACKEND` is **unset**, the extension uses loopback, an in-memory fake backend for PC simulation. It does not move hardware and logs that it is active.
-- If `HALSIMVMX_BACKEND` is **set but loading fails**, extension initialization fails (`-1`). It must not silently fall back to loopback: the most dangerous outcome is robot code appearing to run normally while the hardware remains inactive.
-- Plugins with a different ABI version or structure size are rejected. Exceptions do not cross the ABI boundary.
-- Validation: a test plugin wrapping loopback through the C ABI was loaded on PC. Normal operation, missing files, non-plugin libraries, ABI mismatch, and environment-variable behavior were tested. `StudicaBackend.cpp` has since been built and run on the VMX-pi (DIO, AnalogIn, Encoder, IMU; see `HARDWARE_CHECKLIST.md`).
-- Release and debug HALs have different SONAMEs, so the release build produces two extensions, `libhalsim_vmx.so` and `libhalsim_vmxd.so`, sharing one backend and driver library (`tools/w4studica/`).
+`libhalsim_vmx.so` does not need `VMXPi.h` (only the VMX image has it). Hardware access is in a plugin loaded with `dlopen` from `HALSIMVMX_BACKEND` (`libhalsim_vmx_studica.so`), so the extension cross-compiles for `linuxarm64`.
 
-## 1. Mapping table (Path B: WPILib class → sim HAL → Studica class)
+- The interface is a C function table (`BackendApi.h`, ABI version 1), so the two libraries may use different compilers. The plugin exports `wpilibvmx_CreateBackendV1` / `wpilibvmx_DestroyBackendV1`; `MakeBackendApi` in `BackendPlugin.hpp` wraps any `VmxBackend`. A different ABI version or structure size is rejected; exceptions do not cross the boundary.
+- `HALSIMVMX_BACKEND` unset: the in-memory loopback backend (PC simulation), logged. Set but failing to load: extension initialisation fails (`-1`). It never falls back to loopback, because robot code that looks normal while no hardware moves is the dangerous outcome.
+- The release and debug HALs have different SONAMEs, so a release build produces `libhalsim_vmx.so` and `libhalsim_vmxd.so`, sharing one backend and driver library (`tools/w4studica/`).
+- The extension makes SIGINT and SIGTERM end the process after the VMX HAL's clean-up (`TerminationHandlers`); see `HARDWARE_CHECKLIST.md`.
 
-The "sim HAL data" column lists HALSIM field names from `hal/.../simulation/*Data.h`.
+## 3. Mapping (WPILib class to sim HAL to Studica class)
 
-| WPILib class | Sim HAL data | Direction | Studica class / method | Notes |
-|---|---|---|---|---|
-| `DigitalOutput` | `DIO` `Initialized`, `IsInput=false`, `Value` | sim→HW | `DIO(ch, PinMode::OUTPUT)`, `Set(bool)` | Channel map required (§4) |
-| `DigitalInput` | `DIO` `Initialized`, `IsInput=true`, `Value` | HW→sim | `DIO(ch, PinMode::INPUT)`, `Get()` | Can map interrupts to `EnableInterrupt()` |
-| `AnalogInput` | `AnalogIn` `Initialized`, `Voltage` | HW→sim | `AnalogInput(port)`, `GetAverageVoltage(float&)` | Returns `bool` and writes an out parameter |
-| `Encoder` | `Encoder` `Initialized`, `DigitalChannelA/B`, `Count`, `Reset`, `ReverseDirection` | HW→sim | `Encoder(port_a, port_b)`, `GetCount()` | Wrapper handles `Reset` / `DistancePerPulse` (`Studica Encoder` has no reset) |
-| `PWM` / `Servo` | `PWM` `Initialized`, `PulseMicrosecond`, `OutputPeriod` | sim→HW | (deferred) | **Deferred.** Studica `PWM` has no public output setter (`Servo::SetAngle/SetSpeed` are the only outputs), and conversion from integer range to duty ticks does not match microsecond pulse widths. Since `studica_drivers` cannot be changed, users should use Studica `Servo` directly. `SetAngle` calls `printf` every time. |
-| `DutyCycleEncoder` | `DutyCycle` `Initialized`, `Frequency`, `Output` | HW→sim | (deferred) | **Deferred.** Studica's VMX capture for 12-bit (4095) absolute encoders returns degrees only and exposes no raw duty/frequency. Inferring them would require assumptions about the sensor protocol and risks silently returning incorrect values. |
-| IMU (`OnboardIMU` family) | `IMU` `Yaw`, `AngleX/Y/Z`, `GyroRateX/Y/Z`, `AccelX/Y/Z` (setters only, one global instance, no "initialized" signal) | HW→sim | `Imu` (navX): `GetYaw/Pitch/Roll`, `GetRawGyroX/Y/Z`, `GetRawAccelX/Y/Z`, `IsConnected`, `IsCalibrating` | **Implemented.** Enable explicitly with `HALSIMVMX_IMU=1` because no signal indicates the IMU is present. Conversions: degrees→radians, deg/s→rad/s, g→m/s². navX yaw and Z angular rate are clockwise-positive, while WPILib is counterclockwise-positive, so their signs are inverted. **Measured:** yaw sign (counterclockwise increases) and Z acceleration (+9.7–9.8 m/s² at rest). **Not verified:** Z angular-rate sign (same assumption as yaw, never captured directly) and roll/pitch axes and signs. Roll/pitch and X/Y angular rates/acceleration are passed through. Values are not updated while disconnected or calibrating. Quaternion is unsupported because the sim HAL has no setter. |
-| `I2C` | `I2C` `Initialized`, read/write **buffer callbacks** | Both ways | (deferred) | **Deferred.** The sim HAL does not pass `deviceAddress` to the callback (`hal/src/main/native/sim/mockdata/I2CData.cpp` receives the address but calls only `write(buf, size)` / `read(buf, count)`). The destination device is unknown, and `transaction` cannot be identified as a repeated-start pair because the read callback runs separately after the write callback. Fixing this requires modifying allwpilib itself, which conflicts with the merge policy. An environment variable forcing one address cannot support a multi-device bus. Use Studica I2C devices (such as `Cobra`) through the Studica API directly. |
-| `DriverStation` | `DriverStation` `Enabled`, `RobotMode`, `OpMode`, `EStop`, `DsAttached`, `Joystick*` | Populated by user MockDS | (no hardware class) | We only read it. See §2. |
+| WPILib class | Sim HAL data | Studica class | Notes |
+|---|---|---|---|
+| `DigitalOutput` | `DIO` `Initialized`, `IsInput=false`, `Value` | `DIO(ch, OUTPUT)`, `Set` | channel map required |
+| `DigitalInput` | `DIO` `IsInput=true`, `Value` | `DIO(ch, INPUT)`, `Get` | polled; no interrupts |
+| `AnalogInput` | `AnalogIn` `Voltage` | `AnalogInput(port)`, `GetAverageVoltage` | |
+| `Encoder` | `Encoder` `Count`, `Reset`, `ReverseDirection` | `Encoder(a, b)`, `GetCount` | the wrapper implements `Reset`, direction and `DistancePerPulse` (the Studica class has no reset); the encoder takes the A/B channels over from the `DigitalInput`s WPILib creates |
+| `OnboardIMU` | `IMU` yaw, angles, rates, acceleration | `Imu` (navX) | `HALSIMVMX_IMU=1` (the sim HAL has no "initialized" signal). degrees to radians, deg/s to rad/s, g to m/s2. navX yaw and Z rate are clockwise-positive, WPILib counterclockwise-positive, so those two are negated; roll, pitch and the other rates pass through. Not updated while disconnected or calibrating. No quaternion (no setter). |
+| `PWM`, `Servo` | `PWM` | deferred | Studica `PWM` has no public output setter (only `Servo::SetAngle/SetSpeed`), and its duty ticks do not match microsecond pulse widths. Use the Studica `Servo` directly. |
+| `DutyCycleEncoder` | `DutyCycle` | deferred | the Studica capture returns degrees only, with no raw duty or frequency |
+| `I2C` | read/write buffer callbacks | deferred | the sim HAL does not pass `deviceAddress` to the callback, so the target device is unknown; fixing that means editing allwpilib. Use the Studica I2C devices (such as `Cobra`) directly. |
+| `DriverStation` | `Enabled`, `EStop`, `DsAttached`, ... | none | filled by the team's own MockDS; the extension only reads it |
 
-### Studica-only devices without a WPILib standard equivalent
-
-These devices cannot be represented by the standard sim HAL and are available only through **Path A (direct Studica API use)**. Exposing them through Path B would require XRP-style vendordep classes based on `SimDevice`; that is lower priority.
-
-| Studica class | Purpose | Notes |
-|---|---|---|
-| `Titan` | CAN motor controller (4 channels, encoder, RPM/position PID, limit switch, temperature) | WPILib's standard PWM/CAN motor HAL path is not a fit. **Enable/keepalive rules are important (§2).** |
-| `Ultrasonic` | Ultrasonic `Ping()`, `GetDistanceMM/IN()` | Different shape from WPILib `Ultrasonic` |
-| `Sharp` | Infrared distance sensor (`AnalogInput` based) | |
-| `Cobra` | Line sensor (I2C ADC) | |
-| `Colore`, `Parsec`, `*_usb` | Color / ToF sensors | CAN / USB |
-| `LightTower` | Signal tower / buzzer | |
-
-## 2. Enable / MockDS / safety (most important integration point)
-
-`Titan` has device-specific rules (see comments in `titan.hpp`):
-
-- It powers up **disabled**. Call `Enable(true)` before `SetSpeed` / `SetTargetVelocity` has an effect.
-- If no CAN message arrives for **200 ms**, the device stops and disables itself. While controlling it, send commands every ≤150 ms (`TITAN_CAN_KEEPALIVE_MS`).
-
-→ **The robot enabled state must be connected to Titan enable.** Only the robot program opens the VMX (WPILib uses one process), and `robot_manager` does not open it (§3), so the **robot program** is responsible for safety.
-
-| Option | Description | Notes |
-|---|---|---|
-| **S1 (starting point)** | User code calls `titan.Enable(...)` based on `DriverStation::IsEnabled()`. Provide a helper. | Does not modify Studica classes. Users may forget to call it. |
-| **S4 (implemented)** | **`TitanEnableGuard<TitanT>`** (header-only template outside `studica_drivers`) reads enable/E-stop from the HAL control word (`HAL_GetUncachedControlWord`) and calls `titan.Enable()` **only when state changes**. It always calls `Enable(false)` when stopped or destroyed. It does not send motor commands, so user code must continue calling `SetSpeed` within 150 ms while enabled. Verified on a Titan (2026-10-11): the motor stops when the program dies. | **Caution: the sim HAL fills the control word only when `DsAttached` is true.** The user's MockDS must call both `setEnabled(true)` and `setDsAttached(true)`. Create Titan before the guard. Do not pass `studica_driver::Titan` directly to the guard; wrap it in `wpilibvmx::StudicaTitan` (single frames; the guard repeats them every 20 ms through `KeepAlive()`). The VMX board repeats `Titan::Enable()` frames itself (100 ms for enable, 10 ms for disable), so disable can prevent a later enable and a dead program keeps the motor running (measured). |
-| **Watchdog (optional)** | `ControlLoopWatchdog` (`wpi/halsim/vmx/ControlLoopWatchdog.hpp`) adds two independent freshness deadlines (main control loop, DS packets) to the guard's `EnabledSource`. Starts disabled until both sources have fed it. The user feeds `FeedControlLoop()` after each completed control cycle and `FeedDriverStation()` after each valid DS packet; it never reads cached HAL enable. | PC tests only. Stop latency on the robot is **not measured** (three open items in `HARDWARE_CHECKLIST.md` §7). |
-| Hardware failsafe | Titan **stops itself after 200 ms** even if the process dies (comment in `titan.hpp`, "CAN Watchdog" in the ROS2 README). | Last line of defense against software bugs. |
-
-**The user writes MockDS in their robot code (out of scope for this project).** When MockDS populates the sim `DriverStation` data (`Enabled`, `RobotMode`, `EStop`), our code (Titan helper and safety logic) only reads those values. `robot_manager` is not involved.
-
-## 3. GitHub research and open questions
-
-### Confirmed from the Studica-Robotics/ROS2 `f97edec` code and README (the process rules were also observed on the robot)
-
-- **One process opens the VMX (`pigpio`).** The README / `setup_permissions.sh` says root is required because pigpio accesses `/dev/mem` and locks a **PID file**. `studica_control` logs "pigpio may be unavailable or in use" on failure. WPILib robot code already uses one process, so this restriction is fine.
-  - **Only the robot program process opens the VMX.** `robot_manager` manages process lifetime and does not open the VMX. Avoid opening it from other processes such as diagnostic tools.
-- **Run as root (`sudo`).** The deploy script and `robot_manager` service must run the robot program as root.
-- **Creating and sharing one `VMXPi` per process is a validated pattern.** In `manual_composition.cpp`, `studica_control` creates `VMXPi(true, 50)` once and passes it to all components through `shared_ptr`.
-- **Studica class constructors have a trap in their default arguments.** Most classes (`Titan(...)`, `Servo(...)`, `Encoder(...)`, `DIO(...)`, etc.) default to `vmx = std::make_shared<VMXPi>(true, 50)`, and `Imu()` creates a new one outright. If users instantiate Studica classes without arguments, each device creates another `VMXPi`.
-  - **Do not modify `studica_drivers` (project rule).** Therefore, its defaults cannot be changed. Instead, the Studica plugin library exposes one process-wide instance as `wpilibvmx::SharedVMX()` (`wpi/halsim/vmx/SharedVMX.hpp`; implemented, and the extension's Studica backend uses the same instance). **Tell users to pass this instance when creating Studica objects**, for example: `studica_driver::Titan titan(42, 20000, 0.0f, wpilibvmx::SharedVMX());`. If they omit it, the extra-`VMXPi` trap remains (measured: two instances break SPI, see below). The user program must link `halsim_vmx_studica`; C++ only, no JNI wrapper for Java.
-  - Alternative: document "always pass the VMX instance provided by `halsim_vmx`" (risk of user error).
-- **Titan watchdog:** The device enters a safe state after about 150–200 ms without commands. The ROS2 driver keeps the stopped state by resending all four motor speeds (including zero) at **50 Hz**. `halsim_vmx` must do the same.
-- `examples/!watchdog_example/` contains only a `Makefile`, no source (the `!` in its name appears to mark it as excluded or unfinished). No useful reference is available there.
-- The MIT-licensed **Studica-Robotics/GradleRIO** fork exists ("GradleRIO adapted to deploy for the VMX-Pi"). It appears old, and its README is sparse: it does not explain the WPILib version, host/path, or startup procedure and links to external `pdocs.kauailabs.com` docs. Read its `src/` (especially `WPIExtension.groovy`) separately as a reference when adding a VMX deploy target to our `GradleRIO`.
-
-### Open questions (items 1–3 are answered; kept for the record)
-
-1. ~~Does creating multiple `VMXPi` instances in one process actually fail?~~ **Confirmed (2026-10-10, Ubuntu 26.04 / kernel 7.0): it fails.** Two instances produce repeated SPI write CRC errors and a shutdown segfault; one works. **`SharedVMX()` is required; do not instantiate Studica classes without passing it.** (`HARDWARE_CHECKLIST.md` §2)
-2. ~~Channel-number mapping~~ The VMX channel map was read from the robot (§4). Whether channel numbers match the printed board pins is still unchecked. Original note: complete the WPILib DIO/Analog/PWM ↔ `VMXChannelIndex` map in §4 after checking the VMX-pi pin map. The VMX HAL header (`VMXPi.h`, `/usr/local/include/vmxpi`) is needed; it is not on GitHub and is installed in the VMX OS image (README: `learn.studica.com/docs/ws/vmx/os-images`).
-3. **Threading (not separately verified):** DIO interrupt callbacks run on a VMX background thread. Sim HAL updates must be thread-safe.
-4. **Java support: out of scope (project decision).** Original note:  `studica_drivers` is C++ only. Java users need a JNI wrapper → recommend limiting the initial goal to **C++ only**.
-5. **Python (RobotPy):** Could be a semiwrap binding target like `allwpilib/drivers`, but lower priority.
+Studica-only devices (`Titan`, `Ultrasonic`, `Sharp`, `Cobra`, `Colore`, `Parsec`, `LightTower`) are used through the Studica API (path A).
 
 ## 4. Channel map
 
-### VMX channels (**measured** using the robot's `tools/vmx_channels`, 2026-10-10; VMX board model 0x32, hardware revision 60, firmware 3.0.436)
-
-Based on `VMXChannelIndex`. **Still not verified** whether these correspond to the pin numbers printed on the board (requires jumper-wire testing).
+Measured with `tools/vmx_channels` (`VMXChannelIndex`, VMX board model 0x32). Whether these indices match the numbers printed on the board has not been checked.
 
 | Type | Channels | Capabilities |
 |---|---|---|
-| FlexDIO | 0–11 (12) | DigitalIn/Out, PWM generation (PWMGen/PWMGen2), PWM capture, interrupts. **Encoder A/B pairs: (0,1) (2,3) (4,5) (6,7) (8,9)** (even=EncA, odd=EncB). 10 and 11 have no encoder function. |
-| HiCurrDIO | 12–21 (10) | **DigitalOut and PWMGen only** (no input). Direction is set by jumpers, so these are outputs on this robot. |
-| AnalogIn | 22–25 (4) | Analog input (accumulator, analog trigger, interrupt). |
-| CommDIO | 26–33 (8) | 26/27: DigitalIn/Out + PWMGen + interrupt + I2C SDA/SCL. 28 UART_TX (output), 29 UART_RX (input), 30 SPI_CLK, 31 SPI_MOSI (+LEDArray), 32 SPI_MISO (input), 33 SPI_CS. |
+| FlexDIO | 0 to 11 | DigitalIn/Out, PWM generation and capture, interrupts. **Encoder pairs (0,1) (2,3) (4,5) (6,7) (8,9): A even, B odd.** 10 and 11 have no encoder function. |
+| HiCurrDIO | 12 to 21 | DigitalOut and PWMGen only (jumper-selected direction; outputs on this robot) |
+| AnalogIn | 22 to 25 | analog input (accumulator) |
+| CommDIO | 26 to 33 | 26/27 DigitalIn/Out + PWMGen + I2C SDA/SCL; 28 UART TX; 29 UART RX; 30 SPI CLK; 31 SPI MOSI; 32 SPI MISO; 33 SPI CS |
 
-### WPILib channel → VMX channel (`HALSIMVMX_*_MAP`; configure at runtime, do not hard-code)
-
-Teams choose mappings to match their wiring. The table above defines the available channels.
-
-| WPILib type | Available VMX channels | Notes |
+| WPILib type | VMX channels | Notes |
 |---|---|---|
-| DigitalInput | FlexDIO 0–11, CommDIO 26/27/29/32 | HiCurrDIO cannot be used as input. |
-| DigitalOutput | FlexDIO 0–11, HiCurrDIO 12–21, CommDIO 26/27/28/30/31/33 | |
-| AnalogInput | AnalogIn 22–25 (WPILib 0–3 → 22–25 is a natural mapping) | |
-| Encoder(a, b) | FlexDIO pairs (0,1) (2,3) (4,5) (6,7) (8,9), **A=even, B=odd** | Other combinations may not be supported by hardware (unverified). The `DigitalInput` objects that WPILib `Encoder` creates for those same channels are claimed by the encoder. |
-| Do not use | CommDIO 26–33 when assigned to I2C/UART/SPI | navX/Titan may be connected over SPI/CAN (unverified). |
+| DigitalInput | FlexDIO 0 to 11, CommDIO 26/27/29/32 | HiCurrDIO cannot be an input |
+| DigitalOutput | FlexDIO 0 to 11, HiCurrDIO 12 to 21, CommDIO 26/27/28/30/31/33 | |
+| AnalogInput | AnalogIn 22 to 25 | WPILib 0 to 3 maps naturally to 22 to 25 |
+| Encoder(a, b) | the FlexDIO pairs above | other pairs are not supported by the hardware |
+| avoid | CommDIO 26 to 33 while used for I2C/UART/SPI | |
 
-> **Whether reading/writing pins needs a channel-number offset is still not proven**, but DIO loopback, AnalogIn and Encoder worked with the plain `VMXChannelIndex` numbers on the development robot. On this kernel (7.0), missing sysfs GPIO affects interrupts only (fixed with `gpio_isr_shim`), and the channel number is the HAL's `VMXChannelIndex`, so this seems unrelated to the offset. If needed, `robot_manager` can pass `HALSIMVMX_*_MAP` through a platform profile. See `robot_manager/README.md`.
+Maps are given at run time (`HALSIMVMX_DIO_MAP="0:0,1:1"`, `HALSIMVMX_ANALOG_MAP="0:22"`; entries `<wpilib>:<vmx>` separated by commas, no spaces). Malformed entries and two WPILib channels on one VMX channel are reported; Analog and Encoder channels are checked with `ChannelSupportsCapability` before they are claimed. No channel-number offset was needed on the development robot, so `robot_manager` platform profiles stay empty.
 
-## 5. Patterns from the XRP implementation (for Path B)
+## 5. Enable, MockDS and safety
 
-Reference: `simulation/halsim_xrp/`
+A Titan powers up **disabled** and ignores commands until it is enabled; it stops itself if it hears no CAN message for **200 ms**, so robot code must send `SetSpeed` at least every 150 ms. The robot's enabled state must therefore reach the Titan, and the robot program, not `robot_manager`, is responsible for it.
 
-- Create the client in the extension entry point `HALSIM_InitExtension()` and clean it up with `HAL_OnShutdown` (`main.cpp`).
-- Register only the needed HAL data: `AnalogIn`, `DIO`, `DriverStation`, `Encoder`, and `HAL` ("Minimized set of HAL providers" in `HALSimXRPClient.cpp`).
-- Receive the robot code's `sim_periodic_after` signal and send all output values once per cycle (`HALSimXRP::OnSimValueChanged`).
-- Map device names/channels using a hard-coded table (`XRP.cpp`: motorL→0, servo1→4, encoder channel pair 4/5→0, etc.). Use the same approach for our §4 map.
-- **Difference:** XRP sends values to a remote board via UDP, while VMX calls `studica_driver::*` **directly in the same process**. No network layer (`uv::Udp`, tagged protocol, sequence numbers) is needed. Do not copy the UDP/packet code from `HALSimXRP.cpp` / `XRP.cpp`; implement only the two directions: "sim value changed callback → Studica call" and "Studica read → sim value update" (sim callbacks use `HALSIM_Register*Callback`).
+- **`TitanEnableGuard<T>`** (header only, outside `studica_drivers`) reads enabled and E-stop from the HAL control word (`HAL_GetUncachedControlWord`), sends `Enable()` when the state changes, repeats the current state with `KeepAlive()` every 20 ms, and always sends `Enable(false)` when stopped or destroyed. It sends no motor commands. The sim HAL fills the control word only while `DsAttached` is true, so the team's MockDS must set both `setDsAttached(true)` and `setEnabled(...)`.
+- Do not hand a `studica_driver::Titan` to the guard: `Titan::Enable()` hands the frame repetition to the VMX board, which keeps sending after the program dies. Wrap the Titan in **`wpilibvmx::StudicaTitan`**, which sends single frames (it also stops repeats left on the board by an earlier run) and reports CAN send failures. Create the Titan before the guard.
+- **`ControlLoopWatchdog`** (optional) gives the guard's enabled source two independent deadlines: the main control loop (`FeedControlLoop()` after each completed cycle) and fresh Driver Station data (`FeedDriverStation()` after each valid packet). It starts disabled until both have been fed. Feed it from the real events, never from a timer or the guard. The stop latency on a robot is not measured yet.
+- The Titan's own 200 ms stop is the last line of defence.
 
-## 6. Implementation status
+MockDS is user code and out of scope here.
 
-| # | Step | Status |
-|---|---|---|
-| 1 | Verify hardware, obtain VMX HAL headers, measure the channel map (§4) | Done for the development VMX; printed-pin correspondence unchecked |
-| 2 | `halsim_vmx` skeleton + `SharedVMX()` + `TitanEnableGuard` (+ optional `ControlLoopWatchdog`) | Done; watchdog stop latency not measured |
-| 3 | Standard classes: DIO, AnalogIn, Encoder, IMU | Done and hardware-verified (IMU: yaw and Z acceleration only) |
-| 3 | PWM/Servo, DutyCycle, I2C | **Deferred** (§1) |
-| 4 | Modify `studica_drivers` | Never (project rule) |
-| 5 | `robot_manager` (separate repo `W4Studica/Robot-Manager`): run/restart as root, RioLog, LSE emulation, GPIO shim, network, CPU | Done; platform profiles exist but are unused (the OS image is fixed) |
-| 6 | VMX deploy target in `GradleRIO` | Done (`VmxPi`, `fetchVmxSdk`, `examples/vmx-cpp`) |
-| 7 | Release builds (`tools/w4studica/`) and the VS Code extension | Beta; PC-built, not yet accepted on a fixed image |
-| 8 | Fixed OS image (ISO) | Not started; see `robot_manager/RUNTIME_BASELINE.md` |
+## 6. Status
+
+| Area | Status |
+|---|---|
+| DIO, AnalogIn, Encoder, IMU yaw and Z acceleration, Titan + guard | implemented and verified on a VMX-pi |
+| IMU roll/pitch and Z rate, `ControlLoopWatchdog` latency | implemented, not verified on hardware |
+| PWM, DutyCycle, I2C | deferred (section 3) |
+| Release builds, VS Code extension | beta; see the repositories' README files |

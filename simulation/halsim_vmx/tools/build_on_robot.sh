@@ -14,7 +14,7 @@
 #   dio_probe          loopback test of two VMX channels with the Studica DIO class (no HAL, no extension)
 # Libraries (default ~/wpilib-libs): libwpiHal.so, libwpiutil.so, libntcore.so, libdatalog.so, libwpinet.so
 #
-# NOT YET RUN on a robot.
+# Built and run on a VMX-pi on 2026-10-10 (see HARDWARE_CHECKLIST.md).
 
 set -euo pipefail
 
