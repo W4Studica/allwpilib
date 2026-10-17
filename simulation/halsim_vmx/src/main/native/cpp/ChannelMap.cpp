@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <string_view>
 #include <cstring>
+#include <set>
 
 using namespace wpilibvmx;
 
@@ -32,18 +33,32 @@ ChannelMap ChannelMap::Parse(const std::string& text) {
     rest = comma == std::string_view::npos ? std::string_view{}
                                            : rest.substr(comma + 1);
 
-    auto colon = entry.find(':');
-    if (colon == std::string_view::npos) {
+    if (entry.empty()) {
       continue;
     }
+    auto colon = entry.find(':');
     int wpilib = 0;
     int vmx = 0;
-    if (ParseInt(entry.substr(0, colon), &wpilib) &&
+    if (colon != std::string_view::npos &&
+        ParseInt(entry.substr(0, colon), &wpilib) &&
         ParseInt(entry.substr(colon + 1), &vmx)) {
       result.m_map[wpilib] = vmx;
+    } else {
+      result.m_rejected.emplace_back(entry);
     }
   }
   return result;
+}
+
+std::vector<int> ChannelMap::DuplicateVmxChannels() const {
+  std::set<int> seen;
+  std::set<int> duplicates;
+  for (const auto& [wpilib, vmx] : m_map) {
+    if (!seen.insert(vmx).second) {
+      duplicates.insert(vmx);
+    }
+  }
+  return {duplicates.begin(), duplicates.end()};
 }
 
 ChannelMap ChannelMap::FromEnv(const char* envName) {

@@ -22,6 +22,22 @@ TEST_CASE("ChannelMap skips malformed entries", "[halsim_vmx]") {
   REQUIRE(map.Get(8) == 9);
 }
 
+TEST_CASE("ChannelMap lists the entries it rejected", "[halsim_vmx]") {
+  auto map = ChannelMap::Parse("0:12;1:13");
+  REQUIRE(map.size() == 0);
+  REQUIRE(map.Rejected() == std::vector<std::string>{"0:12;1:13"});
+
+  map = ChannelMap::Parse("a:1,,8:9, 7:4");
+  REQUIRE(map.size() == 1);  // the empty entry is not an error
+  REQUIRE(map.Rejected() == std::vector<std::string>{"a:1", " 7:4"});
+}
+
+TEST_CASE("ChannelMap reports VMX channels used twice", "[halsim_vmx]") {
+  REQUIRE(ChannelMap::Parse("0:1,1:2").DuplicateVmxChannels().empty());
+  REQUIRE(ChannelMap::Parse("0:5,1:5,2:6,3:6,4:7").DuplicateVmxChannels() ==
+          std::vector<int>{5, 6});
+}
+
 TEST_CASE("ChannelMap empty input is empty", "[halsim_vmx]") {
   REQUIRE(ChannelMap::Parse("").size() == 0);
   REQUIRE_FALSE(ChannelMap::Parse("").Get(0).has_value());

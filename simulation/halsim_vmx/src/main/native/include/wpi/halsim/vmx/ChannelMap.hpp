@@ -7,6 +7,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace wpilibvmx {
 
@@ -22,7 +23,7 @@ class ChannelMap {
  public:
   ChannelMap() = default;
 
-  /// Parses the given string. Malformed entries are skipped.
+  /// Parses the given string. Malformed entries are skipped and listed by Rejected().
   static ChannelMap Parse(const std::string& text);
 
   /// Reads and parses the environment variable. Empty map if it is unset.
@@ -31,8 +32,15 @@ class ChannelMap {
   std::optional<int> Get(int wpilibChannel) const;
   size_t size() const { return m_map.size(); }
 
+  /// Non-empty entries that could not be parsed, as written (for example "7;8" or " 7:4").
+  const std::vector<std::string>& Rejected() const { return m_rejected; }
+
+  /// VMX channels that more than one WPILib channel is mapped to. Only one of them can claim it.
+  std::vector<int> DuplicateVmxChannels() const;
+
  private:
   std::map<int, int> m_map;
+  std::vector<std::string> m_rejected;
 };
 
 /// One map per kind of channel. Each is read from its own environment variable.

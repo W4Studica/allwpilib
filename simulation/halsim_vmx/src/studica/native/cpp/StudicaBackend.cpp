@@ -31,8 +31,20 @@ class StudicaBackend : public VmxBackend {
  public:
   StudicaBackend() : m_vmx{SharedVMX()} {}
 
+  /// VMXChannelIndex is a uint8_t: an out-of-range number would wrap around to another channel.
+  /// The Studica Analog/Encoder drivers report nothing when they cannot claim a channel, so check
+  /// here that the channel exists and has the function we are about to ask for.
+  bool ChannelCan(int vmxChannel, VMXChannelCapability capability) const {
+    if (vmxChannel < 0 || vmxChannel >= INVALID_VMX_CHANNEL_INDEX) {
+      return false;
+    }
+    return m_vmx->io.ChannelSupportsCapability(
+        static_cast<VMXChannelIndex>(vmxChannel), capability);
+  }
+
   bool InitDigital(int vmxChannel, bool isInput) override {
-    if (!m_vmx || !m_vmx->IsOpen() || m_dio.contains(vmxChannel)) {
+    if (!m_vmx || !m_vmx->IsOpen() || m_dio.contains(vmxChannel) ||
+        vmxChannel < 0 || vmxChannel >= INVALID_VMX_CHANNEL_INDEX) {
       return false;
     }
     auto dio = std::make_unique<studica_driver::DIO>(
@@ -62,8 +74,9 @@ class StudicaBackend : public VmxBackend {
     return false;
   }
 
- bool InitAnalog(int vmxChannel) override {
-    if (!m_vmx || !m_vmx->IsOpen() || m_analog.contains(vmxChannel)) {
+  bool InitAnalog(int vmxChannel) override {
+    if (!m_vmx || !m_vmx->IsOpen() || m_analog.contains(vmxChannel) ||
+        !ChannelCan(vmxChannel, VMXChannelCapability::AccumulatorInput)) {
       return false;
     }
     m_analog.emplace(vmxChannel,
@@ -87,8 +100,10 @@ class StudicaBackend : public VmxBackend {
     return true;
   }
 
- bool InitEncoder(int vmxChannelA, int vmxChannelB) override {
-    if (!m_vmx || !m_vmx->IsOpen() || m_encoders.contains(vmxChannelA)) {
+  bool InitEncoder(int vmxChannelA, int vmxChannelB) override {
+    if (!m_vmx || !m_vmx->IsOpen() || m_encoders.contains(vmxChannelA) ||
+        !ChannelCan(vmxChannelA, VMXChannelCapability::EncoderAInput) ||
+        !ChannelCan(vmxChannelB, VMXChannelCapability::EncoderBInput)) {
       return false;
     }
     m_encoders.emplace(
@@ -112,7 +127,7 @@ class StudicaBackend : public VmxBackend {
     return true;
   }
 
- bool InitImu() override {
+  bool InitImu() override {
     if (!m_vmx || !m_vmx->IsOpen() || m_imu) {
       return false;
     }

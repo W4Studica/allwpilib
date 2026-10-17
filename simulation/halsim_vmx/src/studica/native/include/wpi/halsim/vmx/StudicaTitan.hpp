@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 
 #include "VMXPi.h"
@@ -35,6 +36,7 @@ namespace wpilibvmx {
 class StudicaTitan {
  public:
   /// The Titan reference is kept for symmetry with the other Studica classes; the frames go straight to the VMXPi.
+  /// canId must be the id the Titan was created with: studica_driver::Titan exposes no accessor, so it cannot be checked.
   StudicaTitan(studica_driver::Titan& /*titan*/, uint8_t canId, std::shared_ptr<VMXPi> vmx = SharedVMX())
       : m_canId{canId}, m_vmx{std::move(vmx)} {}
 
@@ -52,6 +54,10 @@ class StudicaTitan {
       }
     }
   }
+
+  /// False while the most recent frame could not be sent. A failing link is also reported on stderr, once when it
+  /// starts failing and once when it recovers, so a lost disable frame is not silent.
+  bool LastSendOk() const { return m_lastSendOk; }
 
   /// Sends the current state again (once). Call at least every 150 ms while the motors may run.
   void KeepAlive() { Send(m_enabled ? kEnabledFlag : kDisabledFlag); }
@@ -71,8 +77,14 @@ class StudicaTitan {
 
   void Send(uint32_t addressBase) {
     VMXCANMessage msg = Message(addressBase);
-    VMXErrorCode err;
-    m_vmx->can.SendMessage(msg, VMXCAN_SEND_PERIOD_NO_REPEAT, &err);
+    VMXErrorCode err = 0;
+    const bool ok = m_vmx->can.SendMessage(msg, VMXCAN_SEND_PERIOD_NO_REPEAT, &err);
+    if (!ok && m_lastSendOk) {
+      std::fprintf(stderr, "StudicaTitan %d: CAN send failed: %s\n", m_canId, GetVMXErrorString(err));
+    } else if (ok && !m_lastSendOk) {
+      std::fprintf(stderr, "StudicaTitan %d: CAN send works again\n", m_canId);
+    }
+    m_lastSendOk = ok;
   }
 
   /// Stops the periodic retransmission of one of the Titan's enable frames. Nothing is sent.
@@ -85,6 +97,7 @@ class StudicaTitan {
   uint8_t m_canId;
   std::shared_ptr<VMXPi> m_vmx;
   bool m_enabled = false;
+  bool m_lastSendOk = true;
 };
 
 }  // namespace wpilibvmx
