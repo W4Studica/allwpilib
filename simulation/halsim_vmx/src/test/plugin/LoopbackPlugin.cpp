@@ -13,7 +13,7 @@
 
 extern "C" {
 
-WPILIBVMX_PLUGIN_EXPORT wpilibvmx_BackendApi* wpilibvmx_CreateBackendV1(void) {
+WPILIBVMX_PLUGIN_EXPORT wpilibvmx_BackendApi* wpilibvmx_CreateBackendV2(void) {
   auto* api = wpilibvmx::MakeBackendApi(
       std::make_unique<wpilibvmx::LoopbackBackend>());
 #ifdef HALSIMVMX_TEST_BAD_ABI
@@ -22,7 +22,7 @@ WPILIBVMX_PLUGIN_EXPORT wpilibvmx_BackendApi* wpilibvmx_CreateBackendV1(void) {
   return api;
 }
 
-WPILIBVMX_PLUGIN_EXPORT void wpilibvmx_DestroyBackendV1(
+WPILIBVMX_PLUGIN_EXPORT void wpilibvmx_DestroyBackendV2(
     wpilibvmx_BackendApi* api) {
   wpilibvmx::DestroyBackendApi(api);
 }

@@ -76,7 +76,8 @@ std::optional<int> ChannelMap::Get(int wpilibChannel) const {
 
 ChannelMaps ChannelMaps::FromEnv() {
   return {ChannelMap::FromEnv("HALSIMVMX_DIO_MAP"),
-          ChannelMap::FromEnv("HALSIMVMX_ANALOG_MAP")};
+          ChannelMap::FromEnv("HALSIMVMX_ANALOG_MAP"),
+          ChannelMap::FromEnv("HALSIMVMX_PWM_MAP")};
 }
 
 Config Config::FromEnv() {

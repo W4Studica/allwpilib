@@ -47,8 +47,9 @@ class ChannelMap {
 struct ChannelMaps {
   ChannelMap dio;
   ChannelMap analog;
+  ChannelMap pwm;
 
-  /// HALSIMVMX_DIO_MAP and HALSIMVMX_ANALOG_MAP.
+  /// HALSIMVMX_DIO_MAP, HALSIMVMX_ANALOG_MAP and HALSIMVMX_PWM_MAP.
   static ChannelMaps FromEnv();
 };
 

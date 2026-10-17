@@ -54,6 +54,18 @@ TEST_CASE("Plugin backend works through the C ABI", "[halsim_vmx][plugin]") {
   REQUIRE(backend->InitImu());
   REQUIRE(backend->GetImu(&sample));
   REQUIRE(sample.yawDeg == 0.0);
+
+  // PWM: claimed once, a channel used by a digital pin cannot be reused, released and claimable again.
+  REQUIRE(backend->InitPwm(15, 20000));
+  REQUIRE_FALSE(backend->InitPwm(15, 20000));
+  REQUIRE_FALSE(backend->InitPwm(5, 20000));
+  backend->SetPwmPulse(15, 1500);
+  backend->ReleasePwm(15);
+  REQUIRE(backend->InitPwm(15, 5000));
+
+  // Battery: the loopback has no reading.
+  double battery = -1.0;
+  REQUIRE_FALSE(backend->GetBatteryVoltage(&battery));
 }
 
 TEST_CASE("Loading a missing library reports a dlopen error",

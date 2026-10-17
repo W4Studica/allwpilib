@@ -15,6 +15,9 @@
 #include "wpi/hal/DIO.h"
 #include "wpi/hal/Encoder.h"
 #include "wpi/hal/IMU.h"
+#include "wpi/hal/PWM.h"
+#include "wpi/hal/simulation/PWMData.h"
+#include "wpi/hal/simulation/RoboRioData.h"
 #include "wpi/hal/simulation/AnalogInData.h"
 #include "wpi/hal/simulation/DIOData.h"
 #include "wpi/hal/simulation/EncoderData.h"
@@ -35,6 +38,9 @@ constexpr int kEncA = 4;
 constexpr int kEncB = 5;
 constexpr int kVmxEncA = 40;
 constexpr int kVmxEncB = 41;
+// PWM 3 <-> VMX channel 15.
+constexpr int kPwm = 3;
+constexpr int kVmxPwm = 15;
 
 struct Fixture {
   explicit Fixture(bool imuEnabled = false) {
@@ -43,11 +49,14 @@ struct Fixture {
     HALSIM_ResetEncoderData(0);
     HALSIM_ResetDIOData(kEncA);
     HALSIM_ResetDIOData(kEncB);
+    HALSIM_ResetPWMData(kPwm);
+    HALSIM_ResetRoboRioData();
     auto backend = std::make_unique<LoopbackBackend>();
     hw = backend.get();
     Config config;
     config.maps.dio = ChannelMap::Parse("2:20,4:40,5:41");
     config.maps.analog = ChannelMap::Parse("1:30");
+    config.maps.pwm = ChannelMap::Parse("3:15");
     config.imu = imuEnabled;
     sim = std::make_unique<HALSimVMX>(std::move(backend), std::move(config));
     sim->Start(false);
@@ -59,6 +68,8 @@ struct Fixture {
     HALSIM_ResetEncoderData(0);
     HALSIM_ResetDIOData(kEncA);
     HALSIM_ResetDIOData(kEncB);
+    HALSIM_ResetPWMData(kPwm);
+    HALSIM_ResetRoboRioData();
   }
   LoopbackBackend* hw;
   std::unique_ptr<HALSimVMX> sim;
@@ -406,4 +417,77 @@ TEST_CASE("Stopping releases the IMU", "[halsim_vmx]") {
   REQUIRE(f.hw->IsImuClaimed());
   f.sim->Stop();
   REQUIRE_FALSE(f.hw->IsImuClaimed());
+}
+
+TEST_CASE("PWM output is claimed and follows the pulse width", "[halsim_vmx]") {
+  Fixture f;
+  int32_t status = 0;
+  auto handle = HAL_InitializePWMPort(kPwm, nullptr, &status);
+  REQUIRE(status == 0);
+  HAL_SetPWMOutputPeriod(handle, 3, &status);  // 20 ms
+
+  f.sim->Poll();
+  REQUIRE(f.hw->IsPwmClaimed(kVmxPwm));
+  REQUIRE(f.hw->PwmPeriod(kVmxPwm) == 20000);
+  REQUIRE(f.hw->PwmPulse(kVmxPwm) == 0);  // initialised disabled
+
+  HAL_SetPWMPulseTimeMicroseconds(handle, 1500, &status);
+  f.sim->Poll();
+  REQUIRE(f.hw->PwmPulse(kVmxPwm) == 1500);
+
+  HAL_SetPWMPulseTimeMicroseconds(handle, 0, &status);  // disabled again
+  f.sim->Poll();
+  REQUIRE(f.hw->PwmPulse(kVmxPwm) == 0);
+
+  HAL_FreePWMPort(handle);
+  f.sim->Poll();
+  REQUIRE_FALSE(f.hw->IsPwmClaimed(kVmxPwm));
+}
+
+TEST_CASE("A new PWM frame length restarts the generator", "[halsim_vmx]") {
+  Fixture f;
+  int32_t status = 0;
+  auto handle = HAL_InitializePWMPort(kPwm, nullptr, &status);
+  HAL_SetPWMOutputPeriod(handle, 3, &status);
+  HAL_SetPWMPulseTimeMicroseconds(handle, 1500, &status);
+  f.sim->Poll();
+  REQUIRE(f.hw->PwmPeriod(kVmxPwm) == 20000);
+
+  HAL_SetPWMOutputPeriod(handle, 0, &status);  // 5 ms
+  f.sim->Poll();
+  REQUIRE(f.hw->PwmPeriod(kVmxPwm) == 5000);
+  REQUIRE(f.hw->PwmPulse(kVmxPwm) == 1500);  // the pulse is written again to the new generator
+
+  HAL_FreePWMPort(handle);
+  f.sim->Poll();
+}
+
+TEST_CASE("Unmapped PWM channels are ignored", "[halsim_vmx]") {
+  Fixture f;
+  int32_t status = 0;
+  auto handle = HAL_InitializePWMPort(7, nullptr, &status);
+  f.sim->Poll();
+  REQUIRE_FALSE(f.hw->IsPwmClaimed(7));
+  HAL_FreePWMPort(handle);
+  HALSIM_ResetPWMData(7);
+}
+
+TEST_CASE("The battery voltage reaches the RoboRIO sim data", "[halsim_vmx]") {
+  Fixture f;
+  f.sim->Poll();  // no reading yet: the sim value is left alone
+  const double before = HALSIM_GetRoboRioVInVoltage();
+
+  f.hw->DriveBattery(11.4);
+  // Read once per ten polls.
+  for (int i = 0; i < 10; ++i) {
+    f.sim->Poll();
+  }
+  REQUIRE(HALSIM_GetRoboRioVInVoltage() == Catch::Approx(11.4));
+
+  f.hw->DriveBattery(0.0, false);  // a lost reading keeps the last value
+  for (int i = 0; i < 10; ++i) {
+    f.sim->Poll();
+  }
+  REQUIRE(HALSIM_GetRoboRioVInVoltage() == Catch::Approx(11.4));
+  (void)before;
 }

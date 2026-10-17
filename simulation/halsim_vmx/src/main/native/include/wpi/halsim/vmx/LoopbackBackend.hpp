@@ -32,6 +32,10 @@ class LoopbackBackend : public VmxBackend {
   bool InitImu() override;
   void ReleaseImu() override;
   bool GetImu(ImuSample* sample) override;
+  bool InitPwm(int vmxChannel, int periodMicros) override;
+  void ReleasePwm(int vmxChannel) override;
+  void SetPwmPulse(int vmxChannel, int pulseMicros) override;
+  bool GetBatteryVoltage(double* volts) override;
 
   /// Test hooks.
   bool IsClaimed(int vmxChannel);
@@ -43,6 +47,11 @@ class LoopbackBackend : public VmxBackend {
   bool IsEncoderClaimed(int vmxChannelA);
   void DriveEncoder(int vmxChannelA, int32_t count);
   bool IsImuClaimed();
+  bool IsPwmClaimed(int vmxChannel);
+  int PwmPeriod(int vmxChannel);
+  int PwmPulse(int vmxChannel);
+  /// Sets the battery reading; valid=false makes GetBatteryVoltage() fail.
+  void DriveBattery(double volts, bool valid = true);
   /// Sets the IMU reading; connected=false makes GetImu() fail.
   void DriveImu(const ImuSample& sample, bool connected = true);
 
@@ -56,6 +65,14 @@ class LoopbackBackend : public VmxBackend {
     int32_t count = 0;
   };
   std::map<int, Enc> m_encoders;
+
+  struct Pwm {
+    int periodMicros = 0;
+    int pulseMicros = 0;
+  };
+  std::map<int, Pwm> m_pwm;
+  double m_battery = 0;
+  bool m_batteryValid = false;
 
   bool m_imuClaimed = false;
   bool m_imuConnected = true;

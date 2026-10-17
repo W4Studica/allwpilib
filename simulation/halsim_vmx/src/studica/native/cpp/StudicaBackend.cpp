@@ -7,6 +7,9 @@
 // Calls the Studica drivers directly. NOT YET COMPILED OR RUN: VMXPi.h and
 // vmxpi_hal_cpp are only available on a VMX-pi.
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <map>
 #include <memory>
 
@@ -154,8 +157,84 @@ class StudicaBackend : public VmxBackend {
     return true;
   }
 
+  /// PWM goes straight to the VMX API, not through studica_driver::PWM/Servo: those have no way to
+  /// write a pulse width, and Servo prints a line on every change. A tick is 4 us (a 20 ms frame
+  /// is 5000 ticks, the resolution studica_driver::PWM uses), so duty ticks = microseconds / 4.
+  bool InitPwm(int vmxChannel, int periodMicros) override {
+    if (!m_vmx || !m_vmx->IsOpen() || m_pwm.contains(vmxChannel) ||
+        periodMicros < kTickMicros || periodMicros > kTickMicros * 65535 ||
+        !ChannelCan(vmxChannel, VMXChannelCapability::PWMGeneratorOutput)) {
+      return false;
+    }
+    PWMGeneratorConfig config(static_cast<uint32_t>(1000000 / periodMicros));
+    const auto maxDuty = static_cast<uint16_t>(periodMicros / kTickMicros);
+    config.SetMaxDutyCycleValue(maxDuty);
+    Pwm pwm;
+    pwm.index = static_cast<VMXChannelIndex>(vmxChannel);
+    pwm.maxDuty = maxDuty;
+    VMXErrorCode err = 0;
+    if (!m_vmx->io.ActivateSinglechannelResource(
+            VMXChannelInfo(pwm.index, VMXChannelCapability::PWMGeneratorOutput),
+            &config, pwm.handle, &err)) {
+      std::fprintf(stderr, "HALSim VMX: PWM on VMX channel %d: %s\n", vmxChannel,
+                   GetVMXErrorString(err));
+      return false;
+    }
+    m_pwm.emplace(vmxChannel, pwm);
+    SetPwmPulse(vmxChannel, 0);
+    return true;
+  }
+
+  void ReleasePwm(int vmxChannel) override {
+    auto it = m_pwm.find(vmxChannel);
+    if (it == m_pwm.end()) {
+      return;
+    }
+    SetPwmPulse(vmxChannel, 0);
+    VMXErrorCode err = 0;
+    m_vmx->io.DeallocateResource(it->second.handle, &err);
+    m_pwm.erase(it);
+  }
+
+  void SetPwmPulse(int vmxChannel, int pulseMicros) override {
+    auto it = m_pwm.find(vmxChannel);
+    if (it == m_pwm.end()) {
+      return;
+    }
+    const long ticks = std::lround(static_cast<double>(pulseMicros) / kTickMicros);
+    const auto duty = static_cast<uint16_t>(
+        std::clamp<long>(ticks, 0, it->second.maxDuty));
+    VMXErrorCode err = 0;
+    if (!m_vmx->io.PWMGenerator_SetDutyCycle(it->second.handle, it->second.index, duty, &err)) {
+      std::fprintf(stderr, "HALSim VMX: PWM duty on VMX channel %d: %s\n", vmxChannel,
+                   GetVMXErrorString(err));
+    }
+  }
+
+  bool GetBatteryVoltage(double* volts) override {
+    if (!m_vmx || !m_vmx->IsOpen()) {
+      return false;
+    }
+    float v = 0.0f;
+    VMXErrorCode err = 0;
+    if (!m_vmx->power.GetSystemVoltage(v, &err)) {
+      return false;
+    }
+    *volts = v;
+    return true;
+  }
+
  private:
+  static constexpr int kTickMicros = 4;
+
+  struct Pwm {
+    VMXResourceHandle handle{};
+    VMXChannelIndex index = 0;
+    uint16_t maxDuty = 0;
+  };
+
   std::shared_ptr<VMXPi> m_vmx;
+  std::map<int, Pwm> m_pwm;
   std::map<int, std::unique_ptr<studica_driver::DIO>> m_dio;
   std::map<int, std::unique_ptr<studica_driver::AnalogInput>> m_analog;
   std::map<int, std::unique_ptr<studica_driver::Encoder>> m_encoders;
@@ -166,7 +245,7 @@ class StudicaBackend : public VmxBackend {
 
 extern "C" {
 
-WPILIBVMX_PLUGIN_EXPORT wpilibvmx_BackendApi* wpilibvmx_CreateBackendV1(void) {
+WPILIBVMX_PLUGIN_EXPORT wpilibvmx_BackendApi* wpilibvmx_CreateBackendV2(void) {
   try {
     return wpilibvmx::MakeBackendApi(
         std::make_unique<wpilibvmx::StudicaBackend>());
@@ -175,7 +254,7 @@ WPILIBVMX_PLUGIN_EXPORT wpilibvmx_BackendApi* wpilibvmx_CreateBackendV1(void) {
   }
 }
 
-WPILIBVMX_PLUGIN_EXPORT void wpilibvmx_DestroyBackendV1(
+WPILIBVMX_PLUGIN_EXPORT void wpilibvmx_DestroyBackendV2(
     wpilibvmx_BackendApi* api) {
   wpilibvmx::DestroyBackendApi(api);
 }

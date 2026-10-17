@@ -29,7 +29,7 @@ namespace {
 class DlBackend : public VmxBackend {
  public:
   DlBackend(void* handle, wpilibvmx_BackendApi* api,
-            wpilibvmx_DestroyBackendV1_fn destroy)
+            wpilibvmx_DestroyBackendV2_fn destroy)
       : m_handle{handle}, m_api{api}, m_destroy{destroy} {}
 
   ~DlBackend() override {
@@ -79,10 +79,21 @@ class DlBackend : public VmxBackend {
     return true;
   }
 
+  bool InitPwm(int ch, int periodMicros) override {
+    return m_api->initPwm(m_api->ctx, ch, periodMicros) != 0;
+  }
+  void ReleasePwm(int ch) override { m_api->releasePwm(m_api->ctx, ch); }
+  void SetPwmPulse(int ch, int pulseMicros) override {
+    m_api->setPwmPulse(m_api->ctx, ch, pulseMicros);
+  }
+  bool GetBatteryVoltage(double* volts) override {
+    return m_api->getBatteryVoltage(m_api->ctx, volts) != 0;
+  }
+
  private:
   void* m_handle;
   wpilibvmx_BackendApi* m_api;
-  wpilibvmx_DestroyBackendV1_fn m_destroy;
+  wpilibvmx_DestroyBackendV2_fn m_destroy;
 };
 
 }  // namespace
@@ -95,9 +106,9 @@ std::unique_ptr<VmxBackend> LoadBackendPlugin(const std::string& path,
     return nullptr;
   }
 
-  auto create = reinterpret_cast<wpilibvmx_CreateBackendV1_fn>(
+  auto create = reinterpret_cast<wpilibvmx_CreateBackendV2_fn>(
       dlsym(handle, WPILIBVMX_CREATE_SYMBOL));
-  auto destroy = reinterpret_cast<wpilibvmx_DestroyBackendV1_fn>(
+  auto destroy = reinterpret_cast<wpilibvmx_DestroyBackendV2_fn>(
       dlsym(handle, WPILIBVMX_DESTROY_SYMBOL));
   if (create == nullptr || destroy == nullptr) {
     *error = std::string{"not a halsim_vmx backend plugin: missing "} +

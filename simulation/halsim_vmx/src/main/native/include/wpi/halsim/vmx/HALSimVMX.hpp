@@ -21,7 +21,7 @@ namespace wpilibvmx {
 
 /**
  * Connects the simulation HAL to VMX hardware. Currently digital I/O, analog inputs, quadrature
- * encoders and the IMU.
+ * encoders, PWM outputs, the IMU and the battery voltage.
  *
  * Pin state (initialized, direction) is reconciled by a polling thread because
  * the sim HAL sets "initialized" before it sets the direction, so the mode
@@ -76,12 +76,24 @@ class HALSimVMX {
     std::chrono::steady_clock::time_point lastTime;
   };
 
+  struct PwmPin {
+    int channel = 0;
+    int vmxChannel = -1;
+    bool applied = false;
+    int appliedPeriodMicros = 0;
+    int appliedPulseMicros = -1;
+    bool claimFailedLogged = false;
+  };
+
   static void OnDioValue(const char* name, void* param,
                          const HAL_Value* value);
+
   void PollDio(DioPin& pin, bool ownedByEncoder);
   void PollAnalog(AnalogPin& pin);
   void PollEncoder(EncoderPin& pin);
   void PollImu();
+  void PollPwm(PwmPin& pin);
+  void PollBattery();
 
   /// WPILib DIO channels used as encoder A/B by encoders that are mapped.
   std::set<int> EncoderOwnedDioChannels() const;
@@ -94,6 +106,9 @@ class HALSimVMX {
   std::vector<DioPin> m_dio;
   std::vector<AnalogPin> m_analog;
   std::vector<EncoderPin> m_encoders;
+  std::vector<PwmPin> m_pwm;
+  int m_batteryPolls = 0;
+  bool m_batteryFailedLogged = false;
   std::mutex m_mutex;
   std::thread m_thread;
   std::atomic<bool> m_running{false};

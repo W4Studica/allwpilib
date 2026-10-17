@@ -15,7 +15,7 @@ bool LoopbackBackend::DigitalChannelBusy(int vmxChannel) const {
       return true;
     }
   }
-  return false;
+  return m_pwm.contains(vmxChannel);
 }
 
 bool LoopbackBackend::InitDigital(int vmxChannel, bool isInput) {
@@ -164,4 +164,57 @@ void LoopbackBackend::DriveImu(const ImuSample& sample, bool connected) {
   std::scoped_lock lock{m_mutex};
   m_imu = sample;
   m_imuConnected = connected;
+}
+
+bool LoopbackBackend::InitPwm(int vmxChannel, int periodMicros) {
+  std::scoped_lock lock{m_mutex};
+  if (periodMicros <= 0 || DigitalChannelBusy(vmxChannel)) {
+    return false;
+  }
+  m_pwm[vmxChannel] = Pwm{periodMicros, 0};
+  return true;
+}
+
+void LoopbackBackend::ReleasePwm(int vmxChannel) {
+  std::scoped_lock lock{m_mutex};
+  m_pwm.erase(vmxChannel);
+}
+
+void LoopbackBackend::SetPwmPulse(int vmxChannel, int pulseMicros) {
+  std::scoped_lock lock{m_mutex};
+  if (auto it = m_pwm.find(vmxChannel); it != m_pwm.end()) {
+    it->second.pulseMicros = pulseMicros;
+  }
+}
+
+bool LoopbackBackend::GetBatteryVoltage(double* volts) {
+  std::scoped_lock lock{m_mutex};
+  if (!m_batteryValid) {
+    return false;
+  }
+  *volts = m_battery;
+  return true;
+}
+
+bool LoopbackBackend::IsPwmClaimed(int vmxChannel) {
+  std::scoped_lock lock{m_mutex};
+  return m_pwm.contains(vmxChannel);
+}
+
+int LoopbackBackend::PwmPeriod(int vmxChannel) {
+  std::scoped_lock lock{m_mutex};
+  auto it = m_pwm.find(vmxChannel);
+  return it == m_pwm.end() ? 0 : it->second.periodMicros;
+}
+
+int LoopbackBackend::PwmPulse(int vmxChannel) {
+  std::scoped_lock lock{m_mutex};
+  auto it = m_pwm.find(vmxChannel);
+  return it == m_pwm.end() ? 0 : it->second.pulseMicros;
+}
+
+void LoopbackBackend::DriveBattery(double volts, bool valid) {
+  std::scoped_lock lock{m_mutex};
+  m_battery = volts;
+  m_batteryValid = valid;
 }

@@ -86,6 +86,18 @@ inline wpilibvmx_BackendApi* MakeBackendApi(std::unique_ptr<VmxBackend> backend)
       return 0;
     }
   };
+  api->initPwm = [](void* c, int ch, int period) -> int {
+    try { return static_cast<VmxBackend*>(c)->InitPwm(ch, period); } catch (...) { return 0; }
+  };
+  api->releasePwm = [](void* c, int ch) {
+    try { static_cast<VmxBackend*>(c)->ReleasePwm(ch); } catch (...) {}
+  };
+  api->setPwmPulse = [](void* c, int ch, int pulse) {
+    try { static_cast<VmxBackend*>(c)->SetPwmPulse(ch, pulse); } catch (...) {}
+  };
+  api->getBatteryVoltage = [](void* c, double* volts) -> int {
+    try { return static_cast<VmxBackend*>(c)->GetBatteryVoltage(volts); } catch (...) { return 0; }
+  };
   return api;
 }
 

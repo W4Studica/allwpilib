@@ -57,6 +57,7 @@ int HALSIM_InitExtension(void) {
   auto config = Config::FromEnv();
   ReportMap("HALSIMVMX_DIO_MAP", "DIO", config.maps.dio);
   ReportMap("HALSIMVMX_ANALOG_MAP", "analog", config.maps.analog);
+  ReportMap("HALSIMVMX_PWM_MAP", "PWM", config.maps.pwm);
 
   auto backend = CreateBackend();
   if (!backend) {

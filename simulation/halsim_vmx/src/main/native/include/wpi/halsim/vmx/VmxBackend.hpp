@@ -57,6 +57,16 @@ class VmxBackend {
   virtual void ReleaseImu() = 0;
   /// Reads the IMU. Returns false while it is disconnected or calibrating.
   virtual bool GetImu(ImuSample* sample) = 0;
+
+  /// Starts a PWM output with the given frame length (microseconds). Identified by VMX channel.
+  virtual bool InitPwm(int vmxChannel, int periodMicros) = 0;
+  /// Stops the output (line low) and frees the channel.
+  virtual void ReleasePwm(int vmxChannel) = 0;
+  /// Sets the high time of each frame. 0 disables the output (line low).
+  virtual void SetPwmPulse(int vmxChannel, int pulseMicros) = 0;
+
+  /// Reads the battery (system) voltage. Returns false if no valid reading is available.
+  virtual bool GetBatteryVoltage(double* volts) = 0;
 };
 
 /**

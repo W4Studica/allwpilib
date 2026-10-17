@@ -13,6 +13,8 @@
 #include "wpi/hal/simulation/DIOData.h"
 #include "wpi/hal/simulation/EncoderData.h"
 #include "wpi/hal/simulation/IMUData.h"
+#include "wpi/hal/simulation/PWMData.h"
+#include "wpi/hal/simulation/RoboRioData.h"
 #include "wpi/halsim/vmx/TerminationHandlers.hpp"
 
 using namespace wpilibvmx;
@@ -21,6 +23,21 @@ namespace {
 constexpr auto kPollPeriod = std::chrono::milliseconds(10);
 constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
 constexpr double kGravity = 9.80665;  // m/s^2 per g
+// The system voltage is read once per this many polls (100 ms): it changes slowly.
+constexpr int kBatteryPollEvery = 10;
+
+/// HAL_SetPWMOutputPeriod: 0 is 5 ms, 1 or 2 is 10 ms, 3 is 20 ms.
+int PeriodMicros(int code) {
+  switch (code) {
+    case 0:
+      return 5000;
+    case 1:
+    case 2:
+      return 10000;
+    default:
+      return 20000;
+  }
+}
 }  // namespace
 
 HALSimVMX::HALSimVMX(std::unique_ptr<VmxBackend> backend, Config config)
@@ -43,6 +60,15 @@ HALSimVMX::HALSimVMX(std::unique_ptr<VmxBackend> backend, Config config)
   m_encoders.resize(numEncoders);
   for (int i = 0; i < numEncoders; ++i) {
     m_encoders[i].index = i;
+  }
+
+  int numPwm = HAL_GetNumPWMChannels();
+  m_pwm.resize(numPwm);
+  for (int ch = 0; ch < numPwm; ++ch) {
+    m_pwm[ch].channel = ch;
+    if (auto vmx = m_maps.pwm.Get(ch)) {
+      m_pwm[ch].vmxChannel = *vmx;
+    }
   }
 
   int numAnalog = HAL_GetNumAnalogInputs();
@@ -115,6 +141,12 @@ void HALSimVMX::Stop() {
       pin.applied = false;
     }
   }
+  for (auto& pin : m_pwm) {
+    if (pin.applied) {
+      m_backend->ReleasePwm(pin.vmxChannel);
+      pin.applied = false;
+    }
+  }
   if (m_imuApplied) {
     m_backend->ReleaseImu();
     m_imuApplied = false;
@@ -157,6 +189,12 @@ void HALSimVMX::Poll() {
       PollAnalog(pin);
     }
   }
+  for (auto& pin : m_pwm) {
+    if (pin.vmxChannel >= 0) {
+      PollPwm(pin);
+    }
+  }
+  PollBattery();
 }
 
 void HALSimVMX::OnDioValue(const char*, void* param, const HAL_Value* value) {
@@ -383,4 +421,55 @@ void HALSimVMX::PollImu() {
   HALSIM_SetIMUAccelX(s.accelXG * kGravity);
   HALSIM_SetIMUAccelY(s.accelYG * kGravity);
   HALSIM_SetIMUAccelZ(s.accelZG * kGravity);
+}
+
+void HALSimVMX::PollPwm(PwmPin& pin) {
+  // See PollDio: no HALSIM_* calls while holding m_mutex.
+  const bool initialized = HALSIM_GetPWMInitialized(pin.channel);
+  const int periodMicros = PeriodMicros(HALSIM_GetPWMOutputPeriod(pin.channel));
+  const int pulseMicros = HALSIM_GetPWMPulseMicrosecond(pin.channel);
+  if (!initialized) {
+    pin.claimFailedLogged = false;
+  }
+
+  std::scoped_lock lock{m_mutex};
+  // A new frame length needs a new generator.
+  if (pin.applied && (!initialized || pin.appliedPeriodMicros != periodMicros)) {
+    m_backend->ReleasePwm(pin.vmxChannel);
+    pin.applied = false;
+  }
+  if (!pin.applied && initialized) {
+    if (m_backend->InitPwm(pin.vmxChannel, periodMicros)) {
+      pin.applied = true;
+      pin.appliedPeriodMicros = periodMicros;
+      pin.appliedPulseMicros = -1;  // forces the pulse below to be written
+      pin.claimFailedLogged = false;
+      std::printf("HALSim VMX: PWM %d -> VMX channel %d (%d us frame)\n",
+                  pin.channel, pin.vmxChannel, periodMicros);
+    } else if (!pin.claimFailedLogged) {
+      pin.claimFailedLogged = true;
+      std::fprintf(stderr, "HALSim VMX: cannot claim VMX channel %d for PWM %d\n",
+                   pin.vmxChannel, pin.channel);
+    }
+  }
+  if (pin.applied && pin.appliedPulseMicros != pulseMicros) {
+    m_backend->SetPwmPulse(pin.vmxChannel, pulseMicros);
+    pin.appliedPulseMicros = pulseMicros;
+  }
+}
+
+void HALSimVMX::PollBattery() {
+  if (m_batteryPolls++ % kBatteryPollEvery != 0) {
+    return;
+  }
+  double volts = 0.0;
+  bool valid = false;
+  {
+    std::scoped_lock lock{m_mutex};
+    valid = m_backend->GetBatteryVoltage(&volts);
+  }
+  if (valid) {
+    m_batteryFailedLogged = false;
+    HALSIM_SetRoboRioVInVoltage(volts);
+  }
 }
