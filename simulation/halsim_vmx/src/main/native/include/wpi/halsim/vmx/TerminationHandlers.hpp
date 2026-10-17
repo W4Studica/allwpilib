@@ -14,7 +14,9 @@ namespace wpilibvmx {
  * robot_manager waited its whole grace period and killed it (every deploy took 5 s longer). MEASURED on a VMX-pi:
  * after "Exiting VMX-pi HAL application ... [normal exit]" the process kept running.
  *
- * Call this after the VMX HAL has been initialised (after the backend was created). For each of SIGINT and SIGTERM that
+ * The VMX HAL may install its handlers after the extension started (MEASURED: a handler installed once at start was never
+ * called), so call this repeatedly: it does nothing for a signal whose handler is already ours, and otherwise installs
+ * ours in front of whatever is there now. HALSimVMX does it on every poll. For each of SIGINT and SIGTERM that
  * already has a handler, it installs one that calls the previous handler (the hardware clean-up), then restores the
  * default action and re-raises the signal, so the process ends like any other desktop robot program. A clean-up that hangs
  * is cut short after one second (SIGALRM). Signals without a

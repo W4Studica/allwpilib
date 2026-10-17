@@ -13,6 +13,7 @@
 #include "wpi/hal/simulation/DIOData.h"
 #include "wpi/hal/simulation/EncoderData.h"
 #include "wpi/hal/simulation/IMUData.h"
+#include "wpi/halsim/vmx/TerminationHandlers.hpp"
 
 using namespace wpilibvmx;
 
@@ -74,6 +75,8 @@ void HALSimVMX::Start(bool spawnPollThread) {
   m_thread = std::thread{[this] {
     while (m_running) {
       Poll();
+      // The VMX HAL installs its SIGINT/SIGTERM handlers when it starts, possibly after this extension did.
+      InstallTerminationHandlers();
       std::this_thread::sleep_for(kPollPeriod);
     }
   }};

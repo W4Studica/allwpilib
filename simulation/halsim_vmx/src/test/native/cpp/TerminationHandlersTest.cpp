@@ -114,6 +114,23 @@ TEST_CASE("a previous handler that hangs is cut short by SIGALRM", "[halsim_vmx]
   REQUIRE(seconds < 3.0);
 }
 
+TEST_CASE("a handler installed after InstallTerminationHandlers is taken over on the next call", "[halsim_vmx]") {
+  bool ran = false;
+  int status = RunInChild(
+      [] {
+        wpilibvmx::InstallTerminationHandlers();  // no handler yet: nothing happens
+        signal(SIGTERM, PreviousHandler);         // the VMX HAL installs its own later
+        wpilibvmx::InstallTerminationHandlers();
+        wpilibvmx::InstallTerminationHandlers();  // already ours: must not chain to itself
+        raise(SIGTERM);
+        pause();
+      },
+      &ran);
+  REQUIRE(WIFSIGNALED(status));
+  REQUIRE(WTERMSIG(status) == SIGTERM);
+  REQUIRE(ran);
+}
+
 TEST_CASE("an ignored signal stays ignored", "[halsim_vmx]") {
   bool ran = false;
   int status = RunInChild(

@@ -63,8 +63,8 @@ int HALSIM_InitExtension(void) {
     return -1;
   }
 
-  // The VMX HAL has installed its SIGINT/SIGTERM handlers by now (creating the backend opened it): make them end the
-  // process, which they do not do on their own.
+  // The VMX HAL's SIGINT/SIGTERM handlers do not end the process on their own. They may not exist yet, so the poll
+  // thread keeps calling this too.
   InstallTerminationHandlers();
 
   gSim = std::make_unique<HALSimVMX>(std::move(backend), std::move(config));

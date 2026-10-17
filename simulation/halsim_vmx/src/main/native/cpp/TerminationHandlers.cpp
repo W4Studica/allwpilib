@@ -63,12 +63,17 @@ void wpilibvmx::InstallTerminationHandlers() {
     if (sigaction(kSignals[i], nullptr, &current) != 0 || !HasHandler(current)) {
       continue;
     }
+    if ((current.sa_flags & SA_SIGINFO) && current.sa_sigaction == OnTerminate) {
+      continue;  // already ours
+    }
     gPrevious[i] = current;
     struct sigaction action;
     sigemptyset(&action.sa_mask);
     action.sa_flags = SA_SIGINFO;
     action.sa_sigaction = OnTerminate;
     sigaction(kSignals[i], &action, nullptr);
+    Say(kSignals[i] == SIGINT ? "halsim_vmx: SIGINT now ends the process after the VMX HAL clean-up\n"
+                              : "halsim_vmx: SIGTERM now ends the process after the VMX HAL clean-up\n");
   }
 }
 
