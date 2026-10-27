@@ -25,6 +25,9 @@ class LoopbackBackend : public HardwareBackend {
   void ReleaseDigital(int vmxChannel) override;
   void SetDigital(int vmxChannel, bool value) override;
   bool GetDigital(int vmxChannel) override;
+  bool TryGetDigital(int channel, bool* value) override;
+  bool TrySetDigital(int channel, bool value) override;
+  bool TrySetPwmPulse(int channel, int pulse) override;
   bool InitAnalog(int vmxChannel) override;
   void ReleaseAnalog(int vmxChannel) override;
   bool GetAnalogVoltage(int vmxChannel, double* volts) override;

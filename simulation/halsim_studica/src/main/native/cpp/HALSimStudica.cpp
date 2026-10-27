@@ -140,6 +140,7 @@ void HALSimStudica::Stop() {
       pin.valueCbKey = 0;
     }
   }
+  std::unique_lock busLock{m_i2cMutex};
   std::scoped_lock lock{m_mutex};
   if (m_i2cApplied) {
     m_backend->ReleaseI2c();
@@ -159,6 +160,7 @@ void HALSimStudica::Stop() {
     if (pin.applied) {
       m_backend->ReleaseDigital(pin.vmxChannel);
       pin.applied = false;
+      pin.outputValue.reset();
     }
   }
   for (auto& pin : m_analog) {
@@ -251,7 +253,12 @@ void HALSimStudica::OnDioValue(const char*, void* param,
   // Input pins get their value from hardware; our own HALSIM_SetDIOValue call
   // for an input comes back through here and must not be written out.
   if (pin->applied && !pin->appliedInput) {
-    pin->owner->m_backend->SetDigital(pin->vmxChannel, value->data.v_boolean);
+    bool output = value->data.v_boolean;
+    if (pin->owner->m_backend->TrySetDigital(pin->vmxChannel, output)) {
+      pin->outputValue = output;
+    } else {
+      pin->outputValue.reset();
+    }
   }
 }
 
@@ -271,17 +278,16 @@ void HALSimStudica::PollDio(DioPin& pin, bool ownedByEncoder) {
     if (pin.applied && (!initialized || pin.appliedInput != isInput)) {
       m_backend->ReleaseDigital(pin.vmxChannel);
       pin.applied = false;
+      pin.outputValue.reset();
     }
     if (!pin.applied && initialized) {
       if (m_backend->InitDigital(pin.vmxChannel, isInput)) {
         pin.applied = true;
         pin.appliedInput = isInput;
+        pin.outputValue.reset();
         pin.claimFailedLogged = false;
         std::printf("HALSim Studica: DIO %d -> VMX channel %d (%s)\n",
                     pin.channel, pin.vmxChannel, isInput ? "input" : "output");
-        if (!isInput) {
-          m_backend->SetDigital(pin.vmxChannel, simValue);
-        }
       } else if (!pin.claimFailedLogged) {
         pin.claimFailedLogged = true;
         std::fprintf(
@@ -293,9 +299,12 @@ void HALSimStudica::PollDio(DioPin& pin, bool ownedByEncoder) {
     if (!initialized) {
       pin.claimFailedLogged = false;
     }
+    if (pin.applied && !pin.appliedInput && pin.outputValue != simValue) {
+      if (m_backend->TrySetDigital(pin.vmxChannel, simValue))
+        pin.outputValue = simValue;
+    }
     if (pin.applied && pin.appliedInput) {
-      hardwareValue = m_backend->GetDigital(pin.vmxChannel);
-      publish = true;
+      publish = m_backend->TryGetDigital(pin.vmxChannel, &hardwareValue);
     }
   }
 
@@ -492,8 +501,9 @@ void HALSimStudica::PollPwm(PwmPin& pin) {
     }
   }
   if (pin.applied && pin.appliedPulseMicros != pulseMicros) {
-    m_backend->SetPwmPulse(pin.vmxChannel, pulseMicros);
-    pin.appliedPulseMicros = pulseMicros;
+    if (m_backend->TrySetPwmPulse(pin.vmxChannel, pulseMicros)) {
+      pin.appliedPulseMicros = pulseMicros;
+    }
   }
 }
 

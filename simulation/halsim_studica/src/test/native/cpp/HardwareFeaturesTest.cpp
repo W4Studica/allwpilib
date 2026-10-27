@@ -21,6 +21,7 @@
 #include "wpi/hal/simulation/DigitalEdgeData.h"
 #include "wpi/hal/simulation/DutyCycleData.h"
 #include "wpi/hal/simulation/I2CData.h"
+#include "wpi/hal/simulation/PWMData.h"
 #include "wpi/halsim/studica/HALSimStudica.hpp"
 #include "wpi/studica/detail/backend/LoopbackBackend.hpp"
 
@@ -29,16 +30,18 @@ namespace {
 struct Fixture {
   LoopbackBackend* hw;
   std::unique_ptr<HALSimStudica> sim;
-  Fixture(bool imu = false) {
+  Fixture(bool imu = false, std::unique_ptr<LoopbackBackend> backend =
+                                std::make_unique<LoopbackBackend>()) {
     HALSIM_ResetI2CData(1);
+    HALSIM_ResetPWMData(3);
     HALSIM_ResetDIOData(2);
     HALSIM_ResetDutyCycleData(2);
-    auto backend = std::make_unique<LoopbackBackend>();
     hw = backend.get();
     Config config;
     config.imu = imu;
     config.i2cPort = 1;
     config.maps.dio = ChannelMap::Parse("2:20");
+    config.maps.pwm = ChannelMap::Parse("3:15");
     sim = std::make_unique<HALSimStudica>(std::move(backend), config);
     REQUIRE(sim->Start(false));
   }
@@ -47,6 +50,7 @@ struct Fixture {
     HALSIM_ResetDIOData(2);
     HALSIM_ResetDutyCycleData(2);
     HALSIM_ResetI2CData(1);
+    HALSIM_ResetPWMData(3);
   }
 };
 }  // namespace
@@ -386,4 +390,93 @@ TEST_CASE("An occupied I2C provider prevents a second bridge from starting",
   REQUIRE(HAL_TransactionI2C(HAL_I2C_PORT_1, 0x50, nullptr, 0, nullptr, 0) ==
           0);
   HAL_CloseI2C(HAL_I2C_PORT_1);
+}
+
+TEST_CASE("Blocked I2C does not retain the SIM state lock", "[studica][i2c]") {
+  using namespace std::chrono_literals;
+  Fixture f;
+  HALSIM_SetDIOInitialized(2, true);
+  HALSIM_SetDIOIsInput(2, false);
+  f.sim->Poll();
+  std::promise<void> entered, release;
+  auto proceed = release.get_future().share();
+  f.hw->SetI2cHandler([&](int, const uint8_t*, int, uint8_t*, int) {
+    entered.set_value();
+    proceed.wait();
+    return true;
+  });
+  int32_t status = 0;
+  HAL_InitializeI2C(HAL_I2C_PORT_1, &status);
+  auto transaction = std::async(std::launch::async, [&] {
+    uint8_t byte = 0;
+    return HAL_WriteI2C(HAL_I2C_PORT_1, 0x50, &byte, 1);
+  });
+  entered.get_future().wait();
+  auto output =
+      std::async(std::launch::async, [&] { HALSIM_SetDIOValue(2, true); });
+  const bool outputReady = output.wait_for(500ms) == std::future_status::ready;
+  auto poll = std::async(std::launch::async, [&] { f.sim->Poll(); });
+  const bool pollReady = poll.wait_for(500ms) == std::future_status::ready;
+  release.set_value();
+  output.get();
+  poll.get();
+  REQUIRE(transaction.get() == 0);
+  REQUIRE(outputReady);
+  REQUIRE(pollReady);
+  REQUIRE(f.hw->GetDigital(20));
+  HAL_CloseI2C(HAL_I2C_PORT_1);
+}
+
+TEST_CASE("Failed digital reads preserve the last HAL input",
+          "[studica][digital]") {
+  struct Backend : LoopbackBackend {
+    bool fail = true;
+    bool TryGetDigital(int channel, bool* value) override {
+      return !fail && LoopbackBackend::TryGetDigital(channel, value);
+    }
+  };
+  auto backend = std::make_unique<Backend>();
+  auto* hw = backend.get();
+  Fixture f{false, std::move(backend)};
+  HALSIM_SetDIOInitialized(2, true);
+  HALSIM_SetDIOIsInput(2, true);
+  HALSIM_SetDIOValue(2, true);
+  f.sim->Poll();
+  REQUIRE(HALSIM_GetDIOValue(2));
+  hw->fail = false;
+  f.sim->Poll();
+  REQUIRE_FALSE(HALSIM_GetDIOValue(2));
+}
+TEST_CASE("Failed output writes retry without another user change",
+          "[studica][outputs]") {
+  struct Backend : LoopbackBackend {
+    bool fail = true;
+    bool TrySetDigital(int channel, bool value) override {
+      return !fail && LoopbackBackend::TrySetDigital(channel, value);
+    }
+    bool TrySetPwmPulse(int channel, int value) override {
+      return !fail && LoopbackBackend::TrySetPwmPulse(channel, value);
+    }
+  };
+  auto backend = std::make_unique<Backend>();
+  auto* hw = backend.get();
+  Fixture f{false, std::move(backend)};
+  HALSIM_SetDIOInitialized(2, true);
+  HALSIM_SetDIOIsInput(2, false);
+  HALSIM_SetDIOValue(2, true);
+  HALSIM_SetPWMInitialized(3, true);
+  HALSIM_SetPWMPulseMicrosecond(3, 1500);
+  f.sim->Poll();
+  REQUIRE_FALSE(hw->GetDigital(20));
+  REQUIRE(hw->PwmPulse(15) == 0);
+  hw->fail = false;
+  f.sim->Poll();
+  REQUIRE(hw->GetDigital(20));
+  REQUIRE(hw->PwmPulse(15) == 1500);
+  hw->fail = true;
+  HALSIM_SetDIOValue(2, false);
+  REQUIRE(hw->GetDigital(20));
+  hw->fail = false;
+  f.sim->Poll();
+  REQUIRE_FALSE(hw->GetDigital(20));
 }

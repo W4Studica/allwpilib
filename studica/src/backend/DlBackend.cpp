@@ -29,7 +29,7 @@ namespace {
 class DlBackend : public HardwareBackend {
  public:
   DlBackend(void* handle, wpilibstudica_BackendApi* api,
-            wpilibstudica_DestroyBackendV3_fn destroy)
+            wpilibstudica_DestroyBackendV4_fn destroy)
       : m_handle{handle}, m_api{api}, m_destroy{destroy} {}
 
   ~DlBackend() override {
@@ -128,10 +128,26 @@ class DlBackend : public HardwareBackend {
     return m_api->getBatteryVoltage(m_api->ctx, volts) != 0;
   }
 
+  bool TryGetDigital(int ch, bool* value) override {
+    if (!value)
+      return false;
+    int result = 0;
+    if (!m_api->tryGetDigital(m_api->ctx, ch, &result))
+      return false;
+    *value = result != 0;
+    return true;
+  }
+  bool TrySetDigital(int ch, bool value) override {
+    return m_api->trySetDigital(m_api->ctx, ch, value) != 0;
+  }
+  bool TrySetPwmPulse(int ch, int pulse) override {
+    return m_api->trySetPwmPulse(m_api->ctx, ch, pulse) != 0;
+  }
+
  private:
   void* m_handle;
   wpilibstudica_BackendApi* m_api;
-  wpilibstudica_DestroyBackendV3_fn m_destroy;
+  wpilibstudica_DestroyBackendV4_fn m_destroy;
 };
 
 }  // namespace
@@ -149,9 +165,9 @@ std::unique_ptr<HardwareBackend> LoadBackendPlugin(const std::string& path,
     return nullptr;
   }
 
-  auto create = reinterpret_cast<wpilibstudica_CreateBackendV3_fn>(
+  auto create = reinterpret_cast<wpilibstudica_CreateBackendV4_fn>(
       dlsym(handle, WPILIBSTUDICA_CREATE_SYMBOL));
-  auto destroy = reinterpret_cast<wpilibstudica_DestroyBackendV3_fn>(
+  auto destroy = reinterpret_cast<wpilibstudica_DestroyBackendV4_fn>(
       dlsym(handle, WPILIBSTUDICA_DESTROY_SYMBOL));
   if (create == nullptr || destroy == nullptr) {
     *error = std::string{"not a halsim_studica backend plugin: missing "} +
@@ -180,6 +196,13 @@ std::unique_ptr<HardwareBackend> LoadBackendPlugin(const std::string& path,
     return nullptr;
   }
 
+  if (!api->ctx || !api->tryGetDigital || !api->trySetDigital ||
+      !api->trySetPwmPulse) {
+    *error = "backend plugin has an incomplete checked IO table";
+    destroy(api);
+    dlclose(handle);
+    return nullptr;
+  }
   return std::make_unique<DlBackend>(handle, api, destroy);
 }
 

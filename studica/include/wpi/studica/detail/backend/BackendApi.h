@@ -15,8 +15,8 @@
  * and the Ubuntu one on the VMX).
  *
  * A plugin exports:
- *   wpilibstudica_BackendApi* wpilibstudica_CreateBackendV3(void);
- *   void wpilibstudica_DestroyBackendV3(wpilibstudica_BackendApi* api);
+ *   wpilibstudica_BackendApi* wpilibstudica_CreateBackendV4(void);
+ *   void wpilibstudica_DestroyBackendV4(wpilibstudica_BackendApi* api);
  *
  * Booleans are int (0 = false). Methods that can fail return int (0 = failure).
  * Channel numbers are VMX channel indexes.
@@ -24,7 +24,7 @@
 
 #include <stdint.h>
 
-#define WPILIBSTUDICA_BACKEND_ABI_VERSION 3
+#define WPILIBSTUDICA_BACKEND_ABI_VERSION 4
 
 #ifdef __cplusplus
 extern "C" {
@@ -91,14 +91,18 @@ typedef struct wpilibstudica_BackendApi {
 
   /// Battery (system) voltage. Returns 0 if no valid reading is available.
   int (*getBatteryVoltage)(void* ctx, double* volts);
+  // ABI v4: status and digital value are separate. 0 = failure, 1 = success.
+  int (*tryGetDigital)(void* ctx, int channel, int* value);
+  int (*trySetDigital)(void* ctx, int channel, int value);
+  int (*trySetPwmPulse)(void* ctx, int channel, int pulse);
 } wpilibstudica_BackendApi;
 
-typedef wpilibstudica_BackendApi* (*wpilibstudica_CreateBackendV3_fn)(void);
-typedef void (*wpilibstudica_DestroyBackendV3_fn)(
+typedef wpilibstudica_BackendApi* (*wpilibstudica_CreateBackendV4_fn)(void);
+typedef void (*wpilibstudica_DestroyBackendV4_fn)(
     wpilibstudica_BackendApi* api);
 
-#define WPILIBSTUDICA_CREATE_SYMBOL "wpilibstudica_CreateBackendV3"
-#define WPILIBSTUDICA_DESTROY_SYMBOL "wpilibstudica_DestroyBackendV3"
+#define WPILIBSTUDICA_CREATE_SYMBOL "wpilibstudica_CreateBackendV4"
+#define WPILIBSTUDICA_DESTROY_SYMBOL "wpilibstudica_DestroyBackendV4"
 
 #ifdef __cplusplus
 }  // extern "C"

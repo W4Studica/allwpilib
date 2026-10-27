@@ -13,7 +13,8 @@ int32_t HALSimStudica::OnI2cTransaction(void* param, int32_t address,
                                         const uint8_t* tx, int32_t txSize,
                                         uint8_t* rx, int32_t rxSize) {
   auto& self = *static_cast<HALSimStudica*>(param);
-  std::scoped_lock lock{self.m_mutex};
+  std::unique_lock busLock{self.m_i2cMutex};
+  std::unique_lock stateLock{self.m_mutex};
   if (!self.m_running) {
     return -1;
   }
@@ -23,6 +24,7 @@ int32_t HALSimStudica::OnI2cTransaction(void* param, int32_t address,
   if (!self.m_i2cApplied) {
     return -1;
   }
+  stateLock.unlock();
   return self.m_backend->TransactionI2c(address, tx, txSize, rx, rxSize) ? 0
                                                                          : -1;
 }
@@ -32,7 +34,10 @@ void HALSimStudica::PollI2c() {
     return;
   }
   const bool initialized = HALSIM_GetI2CInitialized(m_config.i2cPort);
-  std::scoped_lock lock{m_mutex};
+  std::unique_lock busLock{m_i2cMutex, std::try_to_lock};
+  if (!busLock.owns_lock())
+    return;
+  std::unique_lock stateLock{m_mutex};
   if (!initialized && m_i2cApplied) {
     m_backend->ReleaseI2c();
     m_i2cApplied = false;

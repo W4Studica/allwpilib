@@ -18,7 +18,8 @@ namespace wpi::studica {
  * VMX-pi (Ubuntu 26.04, kernel 7.0): two VMXPi in one process break the SPI
  * link (hundreds of write CRC errors) and crash on exit, one works. So creating
  * a Studica object without passing a VMXPi is a bug. studica_drivers must not
- * be modified, so always pass the shared instance when using
+ * be modified. Prefer MakeDriver<T>() from wpi/studica/MakeDriver.hpp to inject
+ * the shared VMX automatically, or pass it explicitly when using
  * wpi::studica::drivers:
  *
  *   wpi::studica::drivers::Titan titan(42, 20000, 0.0f,

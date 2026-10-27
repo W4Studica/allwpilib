@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -32,7 +33,8 @@ struct FakeTitan {
   std::vector<bool> calls;
 };
 
-// A Titan whose switch also repeats its state, like the internal TitanEnableSwitch.
+// A Titan whose switch also repeats its state, like the internal
+// TitanEnableSwitch.
 struct KeepAliveTitan : FakeTitan {
   void KeepAlive() {
     std::scoped_lock lock{mutex};
@@ -256,4 +258,29 @@ TEST_CASE("Watchdog rejects nonpositive deadlines",
                     std::invalid_argument);
   REQUIRE_THROWS_AS((wpi::studica::detail::ControlLoopWatchdog{100ms, -1ms}),
                     std::invalid_argument);
+}
+
+TEST_CASE("Stopping waits for an in-flight enable decision",
+          "[studica][titan]") {
+  struct Switch {
+    bool enabled = false;
+    void Enable(bool state) { enabled = state; }
+  } transport;
+  std::promise<void> entered, release;
+  auto proceed = release.get_future().share();
+  wpi::studica::detail::TitanEnableGuard guard{transport, [&] {
+                                                 entered.set_value();
+                                                 proceed.wait();
+                                                 return true;
+                                               }};
+  auto poll = std::async(std::launch::async, [&] { guard.Poll(); });
+  entered.get_future().wait();
+  auto stop = std::async(std::launch::async, [&] { guard.Stop(); });
+  const bool waited = stop.wait_for(std::chrono::milliseconds(50)) ==
+                      std::future_status::timeout;
+  release.set_value();
+  poll.get();
+  stop.get();
+  REQUIRE(waited);
+  REQUIRE_FALSE(transport.enabled);
 }

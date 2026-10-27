@@ -9,14 +9,15 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <thread>
 #include <vector>
 
 #include "wpi/hal/simulation/NotifyListener.h"
 #include "wpi/halsim/studica/ChannelMap.hpp"
-#include "wpi/studica/detail/conversion/DeviceConversions.hpp"
 #include "wpi/studica/detail/backend/HardwareBackend.hpp"
+#include "wpi/studica/detail/conversion/DeviceConversions.hpp"
 
 namespace wpi::studica {
 
@@ -54,6 +55,7 @@ class HALSimStudica {
     // State currently applied to the backend.
     bool applied = false;
     bool appliedInput = false;
+    std::optional<bool> outputValue;
     bool interruptApplied = false;
     bool claimFailedLogged =
         false;  // log a failed claim once, not on every poll
@@ -125,6 +127,7 @@ class HALSimStudica {
   int m_batteryPolls = 0;
   bool m_batteryFailedLogged = false;
   std::mutex m_mutex;
+  std::mutex m_i2cMutex;  // Acquire before m_mutex when both are needed.
   std::thread m_thread;
   std::atomic<bool> m_running{false};
 };

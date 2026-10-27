@@ -4,10 +4,12 @@
 
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "wpi/hal/DriverStation.h"
@@ -17,6 +19,18 @@ namespace wpi::studica {
 /// keepalive and freshness checks. Disabled until both heartbeats are fed.
 class Titan {
  public:
+  enum class PidType : uint8_t { Off = 0, Legacy = 1, Mcv2 = 2 };
+  enum class LimitDirection : uint8_t { Forward = 0, Reverse = 1 };
+  template <class T>
+  struct Reading {
+    T value{};
+    bool fresh = false;
+    uint64_t timestampMicros = 0;
+  };
+  struct LimitSwitches {
+    std::array<bool, 4> forward{};
+    std::array<bool, 4> reverse{};
+  };
   struct Config {
     uint16_t motorFrequencyHz = 15600;
     float distancePerTick = 1.0f;
@@ -52,6 +66,20 @@ class Titan {
   bool LastSendOk() const;
   /// Permanently stops this object's enable worker and disables its device.
   void Stop();
+
+  // Value-returning queries distinguish unavailable data (nullopt) from stale
+  // but valid cached data (fresh=false). Legacy queries remain supported.
+  std::optional<Reading<float>> ReadRPM(uint8_t motor);
+  std::optional<Reading<double>> ReadEncoderDistance(uint8_t motor);
+  std::optional<Reading<std::array<double, 4>>> ReadCypherAngles();
+  std::optional<Reading<LimitSwitches>> ReadLimitSwitches();
+  bool GetLimitSwitch(uint8_t motor, LimitDirection direction) {
+    return GetLimitSwitch(motor, static_cast<uint8_t>(direction));
+  }
+  void SetPIDType(PidType type) { SetPIDType(static_cast<uint8_t>(type)); }
+  void SetMotorPIDType(uint8_t motor, PidType type) {
+    SetMotorPIDType(motor, static_cast<uint8_t>(type));
+  }
 
   void SetupEncoder(uint8_t encoder);
   /// Configured CAN ID; does not issue a firmware query.

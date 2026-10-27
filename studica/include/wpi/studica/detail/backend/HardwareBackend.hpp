@@ -52,6 +52,23 @@ class HardwareBackend {
   virtual void ReleaseDigital(int vmxChannel) = 0;
   virtual void SetDigital(int vmxChannel, bool value) = 0;
   virtual bool GetDigital(int vmxChannel) = 0;
+  // Checked operations distinguish failure from a legitimate LOW input.
+  // Existing backends retain their behavior through these compatibility
+  // defaults.
+  virtual bool TryGetDigital(int channel, bool* value) {
+    if (!value)
+      return false;
+    *value = GetDigital(channel);
+    return true;
+  }
+  virtual bool TrySetDigital(int channel, bool value) {
+    SetDigital(channel, value);
+    return true;
+  }
+  virtual bool TrySetPwmPulse(int channel, int pulse) {
+    SetPwmPulse(channel, pulse);
+    return true;
+  }
 
   /// Claims an analog input channel. Returns false if it could not be set up.
   virtual bool InitAnalog(int vmxChannel) = 0;

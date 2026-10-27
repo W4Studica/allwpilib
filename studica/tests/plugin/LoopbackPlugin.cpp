@@ -15,7 +15,7 @@
 extern "C" {
 
 WPILIBSTUDICA_PLUGIN_EXPORT wpilibstudica_BackendApi*
-wpilibstudica_CreateBackendV3(void) {
+wpilibstudica_CreateBackendV4(void) {
   auto* api = wpi::studica::MakeBackendApi(
       std::make_unique<wpi::studica::LoopbackBackend>());
 #ifdef HALSIMSTUDICA_TEST_BAD_ABI
@@ -24,7 +24,7 @@ wpilibstudica_CreateBackendV3(void) {
   return api;
 }
 
-WPILIBSTUDICA_PLUGIN_EXPORT void wpilibstudica_DestroyBackendV3(
+WPILIBSTUDICA_PLUGIN_EXPORT void wpilibstudica_DestroyBackendV4(
     wpilibstudica_BackendApi* api) {
   wpi::studica::DestroyBackendApi(api);
 }

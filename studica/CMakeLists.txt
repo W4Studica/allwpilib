@@ -24,6 +24,16 @@ if(WPILIB_WITH_STUDICA)
     add_library(studica_hardware SHARED
         src/conversion/DeviceConversions.cpp
         src/hardware/StudicaBackend.cpp
+        src/hardware/SharedVMX.cpp
+        src/hardware/RtcClock.cpp
+        src/hardware/devices/Digital.cpp
+        src/hardware/devices/Analog.cpp
+        src/hardware/devices/Encoder.cpp
+        src/hardware/devices/Imu.cpp
+        src/hardware/devices/Pwm.cpp
+        src/hardware/devices/I2c.cpp
+        src/hardware/devices/DutyCycle.cpp
+        src/hardware/devices/Interrupt.cpp
         src/titan/Titan.cpp
     )
     target_compile_features(studica_hardware PRIVATE cxx_std_20)
@@ -49,6 +59,8 @@ if(WPILIB_WITH_TESTS)
     target_compile_definitions(studica_test_plugin_bad_abi PRIVATE HALSIMSTUDICA_TEST_BAD_ABI)
     wpilib_add_test(studica
         tests/main.cpp
+        tests/backend/BackendPluginTest.cpp
+        tests/runtime/UniqueResourceTest.cpp
         tests/runtime/TerminationHandlersTest.cpp
         tests/titan/TitanControlTest.cpp
         tests/titan/TitanEnableGuardTest.cpp

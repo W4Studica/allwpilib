@@ -119,7 +119,7 @@ TEST_CASE("The extension refuses to initialize when its backend cannot load",
 #endif
 
 #ifndef _WIN32
-TEST_CASE("ABI v3 forwards capture and I2C lifecycle", "[studica][plugin]") {
+TEST_CASE("ABI v4 forwards capture and I2C lifecycle", "[studica][plugin]") {
   std::string error;
   auto backend = LoadBackendPlugin(HALSIMSTUDICA_TEST_PLUGIN, &error);
   REQUIRE(backend != nullptr);
@@ -141,3 +141,16 @@ TEST_CASE("ABI v3 forwards capture and I2C lifecycle", "[studica][plugin]") {
   REQUIRE(backend->InitDigital(12, true));
 }
 #endif
+
+TEST_CASE("Loaded plugin separates missing digital input from LOW",
+          "[studica][plugin]") {
+  std::string error;
+  auto backend = LoadBackendPlugin(HALSIMSTUDICA_TEST_PLUGIN, &error);
+  REQUIRE(backend);
+  bool value = true;
+  REQUIRE_FALSE(backend->TryGetDigital(99, &value));
+  REQUIRE(value);
+  REQUIRE(backend->InitDigital(99, true));
+  REQUIRE(backend->TryGetDigital(99, &value));
+  REQUIRE_FALSE(value);
+}

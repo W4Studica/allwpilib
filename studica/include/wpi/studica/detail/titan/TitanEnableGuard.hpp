@@ -71,8 +71,8 @@ class TitanEnableGuard {
   /// One pass: sends Enable() only when the state changes (the first pass
   /// always sends). Public so tests can drive it without the thread.
   void Poll() {
-    bool enabled = m_source();
     std::scoped_lock lock{m_mutex};
+    bool enabled = m_source();
     if (!m_haveState || enabled != m_state) {
       m_titan.Enable(enabled);
       m_state = enabled;

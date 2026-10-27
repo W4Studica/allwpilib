@@ -235,13 +235,16 @@ void LoopbackBackend::ReleaseI2c() {
 }
 bool LoopbackBackend::TransactionI2c(int address, const uint8_t* tx, int txSize,
                                      uint8_t* rx, int rxSize) {
-  std::scoped_lock lock{m_mutex};
-  if (!m_i2cActive || !m_i2cHandler || address < 0 || address > 0x7f ||
-      txSize < 0 || rxSize < 0 || txSize > UINT16_MAX || rxSize > UINT16_MAX ||
-      (txSize && !tx) || (rxSize && !rx)) {
-    return false;
+  I2cHandler handler;
+  {
+    std::scoped_lock lock{m_mutex};
+    if (!m_i2cActive || !m_i2cHandler || address < 0 || address > 0x7f ||
+        txSize < 0 || rxSize < 0 || txSize > UINT16_MAX ||
+        rxSize > UINT16_MAX || (txSize && !tx) || (rxSize && !rx))
+      return false;
+    handler = m_i2cHandler;
   }
-  return m_i2cHandler(address, tx, txSize, rx, rxSize);
+  return handler(address, tx, txSize, rx, rxSize);
 }
 void LoopbackBackend::SetI2cHandler(I2cHandler handler) {
   std::scoped_lock lock{m_mutex};
@@ -298,4 +301,28 @@ void LoopbackBackend::DriveInterrupt(int channel, bool rising,
   if (auto it = m_interrupts.find(channel); it != m_interrupts.end()) {
     it->second->Push({rising, timestamp, 0});
   }
+}
+bool LoopbackBackend::TryGetDigital(int channel, bool* value) {
+  std::scoped_lock lock{m_mutex};
+  auto it = m_pins.find(channel);
+  if (!value || it == m_pins.end())
+    return false;
+  *value = it->second.value;
+  return true;
+}
+bool LoopbackBackend::TrySetDigital(int channel, bool value) {
+  std::scoped_lock lock{m_mutex};
+  auto it = m_pins.find(channel);
+  if (it == m_pins.end() || it->second.isInput)
+    return false;
+  it->second.value = value;
+  return true;
+}
+bool LoopbackBackend::TrySetPwmPulse(int channel, int pulse) {
+  std::scoped_lock lock{m_mutex};
+  auto it = m_pwm.find(channel);
+  if (it == m_pwm.end())
+    return false;
+  it->second.pulseMicros = pulse;
+  return true;
 }

@@ -331,12 +331,16 @@ void Titan::SetMotorStopMode(uint8_t mode) {
 
 void Titan::SetPIDType(uint8_t type) {
   std::scoped_lock lock{m_impl->driverMutex};
+  if (type > 2)
+    throw std::out_of_range("Titan PID type must be 0..2");
   m_impl->driver.SetPIDType(type);
 }
 
 void Titan::SetMotorPIDType(uint8_t motor, uint8_t type) {
   CheckMotor(motor);
   std::scoped_lock lock{m_impl->driverMutex};
+  if (type > 2)
+    throw std::out_of_range("Titan PID type must be 0..2");
   m_impl->driver.SetMotorPIDType(motor, type);
 }
 
@@ -379,6 +383,8 @@ void Titan::SetAngleLimits(uint8_t motor, double minDeg, double maxDeg) {
   CheckFinite(minDeg);
   CheckFinite(maxDeg);
   std::scoped_lock lock{m_impl->driverMutex};
+  if (minDeg > maxDeg)
+    throw std::invalid_argument("Titan minimum angle exceeds maximum");
   m_impl->driver.SetAngleLimits(motor, minDeg, maxDeg);
 }
 
@@ -387,6 +393,36 @@ void Titan::GetAngleLimits(uint8_t motor, double& minDeg,
   CheckMotor(motor);
   std::scoped_lock lock{m_impl->driverMutex};
   m_impl->driver.GetAngleLimits(motor, minDeg, maxDeg);
+}
+
+std::optional<Titan::Reading<float>> Titan::ReadRPM(uint8_t motor) {
+  Reading<float> result;
+  if (!GetRPMFresh(motor, result.value, result.fresh, &result.timestampMicros))
+    return std::nullopt;
+  return result;
+}
+std::optional<Titan::Reading<double>> Titan::ReadEncoderDistance(
+    uint8_t motor) {
+  Reading<double> result;
+  if (!GetEncoderDistanceFresh(motor, result.value, result.fresh,
+                               &result.timestampMicros))
+    return std::nullopt;
+  return result;
+}
+std::optional<Titan::Reading<std::array<double, 4>>> Titan::ReadCypherAngles() {
+  Reading<std::array<double, 4>> result;
+  if (!GetCypherAnglesFresh(result.value.data(), result.fresh,
+                            &result.timestampMicros))
+    return std::nullopt;
+  return result;
+}
+std::optional<Titan::Reading<Titan::LimitSwitches>> Titan::ReadLimitSwitches() {
+  Reading<LimitSwitches> result;
+  if (!GetLimitSwitchesFresh(result.value.forward.data(),
+                             result.value.reverse.data(), result.fresh,
+                             &result.timestampMicros))
+    return std::nullopt;
+  return result;
 }
 
 }  // namespace wpi::studica
