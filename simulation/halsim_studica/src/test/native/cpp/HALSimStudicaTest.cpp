@@ -43,7 +43,9 @@ constexpr int kPwm = 3;
 constexpr int kVmxPwm = 15;
 
 struct Fixture {
-  explicit Fixture(bool imuEnabled = false) {
+  explicit Fixture(bool imuEnabled = false,
+                   std::unique_ptr<LoopbackBackend> backend =
+                       std::make_unique<LoopbackBackend>()) {
     HALSIM_ResetDIOData(kDio);
     HALSIM_ResetAnalogInData(kAnalog);
     HALSIM_ResetEncoderData(0);
@@ -51,7 +53,6 @@ struct Fixture {
     HALSIM_ResetDIOData(kEncB);
     HALSIM_ResetPWMData(kPwm);
     HALSIM_ResetRoboRioData();
-    auto backend = std::make_unique<LoopbackBackend>();
     hw = backend.get();
     Config config;
     config.maps.dio = ChannelMap::Parse("2:20,4:40,5:41");
@@ -498,4 +499,63 @@ TEST_CASE("The battery voltage reaches the RoboRIO sim data",
   }
   REQUIRE(HALSIM_GetRoboRioVInVoltage() == Catch::Approx(11.4));
   (void)before;
+}
+
+TEST_CASE("Encoder reset survives a failed hardware read",
+          "[halsim_studica][encoder]") {
+  struct Backend : LoopbackBackend {
+    bool fail = false;
+    bool GetEncoderCount(int channel, int32_t* count) override {
+      return !fail && LoopbackBackend::GetEncoderCount(channel, count);
+    }
+  };
+  auto backend = std::make_unique<Backend>();
+  auto* hw = backend.get();
+  Fixture f{false, std::move(backend)};
+  auto h = MakeEncoder();
+  f.sim->Poll();
+  hw->DriveEncoder(kVmxEncA, 120);
+  f.sim->Poll();
+  hw->fail = true;
+  HALSIM_SetEncoderReset(0, true);
+  f.sim->Poll();
+  const bool retained = HALSIM_GetEncoderReset(0);
+  hw->fail = false;
+  hw->DriveEncoder(kVmxEncA, 130);
+  f.sim->Poll();
+  const auto count = HALSIM_GetEncoderCount(0);
+  const bool acknowledged = !HALSIM_GetEncoderReset(0);
+  FreeEncoder(h);
+  REQUIRE(retained);
+  REQUIRE(acknowledged);
+  REQUIRE(count == 0);
+}
+TEST_CASE("Encoder waits for a valid initial hardware baseline",
+          "[halsim_studica][encoder]") {
+  struct Backend : LoopbackBackend {
+    bool fail = true;
+    bool InitEncoder(int a, int b) override {
+      if (!LoopbackBackend::InitEncoder(a, b))
+        return false;
+      DriveEncoder(a, 700);
+      return true;
+    }
+    bool GetEncoderCount(int channel, int32_t* count) override {
+      return !fail && LoopbackBackend::GetEncoderCount(channel, count);
+    }
+  };
+  auto backend = std::make_unique<Backend>();
+  auto* hw = backend.get();
+  Fixture f{false, std::move(backend)};
+  auto h = MakeEncoder();
+  f.sim->Poll();
+  hw->fail = false;
+  f.sim->Poll();
+  const auto initial = HALSIM_GetEncoderCount(0);
+  hw->DriveEncoder(kVmxEncA, 705);
+  f.sim->Poll();
+  const auto moved = HALSIM_GetEncoderCount(0);
+  FreeEncoder(h);
+  REQUIRE(initial == 0);
+  REQUIRE(moved == 5);
 }

@@ -21,8 +21,9 @@ export(TARGETS halsim_studica FILE halsim_studica.cmake NAMESPACE halsim_studica
 if(WPILIB_WITH_TESTS)
     wpilib_add_test(halsim_studica src/test/native/cpp)
     target_link_libraries(halsim_studica_test halsim_studica)
-    add_dependencies(halsim_studica_test studica_test_plugin_good studica_test_plugin_bad_abi)
+    add_dependencies(halsim_studica_test studica_test_plugin_good studica_test_plugin_bad_abi studica_test_plugin_incomplete)
     target_compile_definitions(halsim_studica_test PRIVATE
+        HALSIMSTUDICA_TEST_INCOMPLETE_PLUGIN="$<TARGET_FILE:studica_test_plugin_incomplete>"
         HALSIMSTUDICA_TEST_PLUGIN="$<TARGET_FILE:studica_test_plugin_good>"
         HALSIMSTUDICA_TEST_BAD_ABI_PLUGIN="$<TARGET_FILE:studica_test_plugin_bad_abi>"
         HALSIMSTUDICA_TEST_NOT_A_PLUGIN="$<TARGET_FILE:halsim_studica>"

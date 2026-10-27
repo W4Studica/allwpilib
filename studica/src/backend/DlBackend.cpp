@@ -196,9 +196,17 @@ std::unique_ptr<HardwareBackend> LoadBackendPlugin(const std::string& path,
     return nullptr;
   }
 
-  if (!api->ctx || !api->tryGetDigital || !api->trySetDigital ||
-      !api->trySetPwmPulse) {
-    *error = "backend plugin has an incomplete checked IO table";
+  if (!api->ctx || !api->initDigital || !api->releaseDigital ||
+      !api->setDigital || !api->getDigital || !api->initAnalog ||
+      !api->releaseAnalog || !api->getAnalogVoltage || !api->initEncoder ||
+      !api->releaseEncoder || !api->getEncoderCount || !api->initImu ||
+      !api->releaseImu || !api->getImu || !api->initPwm || !api->releasePwm ||
+      !api->setPwmPulse || !api->initI2c || !api->releaseI2c ||
+      !api->transactionI2c || !api->initDutyCycle || !api->releaseDutyCycle ||
+      !api->getDutyCycle || !api->initInterrupt || !api->releaseInterrupt ||
+      !api->readInterrupt || !api->getBatteryVoltage || !api->tryGetDigital ||
+      !api->trySetDigital || !api->trySetPwmPulse) {
+    *error = "backend plugin has an incomplete function table";
     destroy(api);
     dlclose(handle);
     return nullptr;

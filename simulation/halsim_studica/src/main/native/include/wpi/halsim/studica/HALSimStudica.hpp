@@ -75,6 +75,7 @@ class HALSimStudica {
     int vmxB = -1;
     bool applied = false;
     EncoderState state;
+    bool haveBaseline = false;
     bool claimFailedLogged = false;
   };
 

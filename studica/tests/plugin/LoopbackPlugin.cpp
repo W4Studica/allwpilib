@@ -21,6 +21,9 @@ wpilibstudica_CreateBackendV4(void) {
 #ifdef HALSIMSTUDICA_TEST_BAD_ABI
   api->abiVersion = 999;
 #endif
+#ifdef HALSIMSTUDICA_TEST_INCOMPLETE
+  api->initDigital = nullptr;
+#endif
   return api;
 }
 

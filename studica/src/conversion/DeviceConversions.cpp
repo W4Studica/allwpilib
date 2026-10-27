@@ -5,6 +5,7 @@
 #include "wpi/studica/detail/conversion/DeviceConversions.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <numbers>
 
@@ -61,7 +62,12 @@ EncoderReading EncoderState::Update(int32_t raw, bool reset, bool reverse,
   if (reset) {
     m_offset = raw;
   }
-  const int32_t delta = m_haveLast ? raw - m_lastRaw : 0;
+  // VMX counters wrap at 32 bits. Subtract in the unsigned domain and
+  // preserve the bit pattern rather than overflowing a signed integer.
+  const int32_t delta =
+      m_haveLast ? std::bit_cast<int32_t>(static_cast<uint32_t>(raw) -
+                                          static_cast<uint32_t>(m_lastRaw))
+                 : 0;
   double rate = 0.0;
   if (m_haveLast) {
     const double seconds =
@@ -70,7 +76,11 @@ EncoderReading EncoderState::Update(int32_t raw, bool reset, bool reverse,
       rate = delta * distancePerPulse / seconds * (reverse ? -1 : 1);
     }
   }
-  const int32_t count = (raw - m_offset) * (reverse ? -1 : 1);
+  uint32_t relative =
+      static_cast<uint32_t>(raw) - static_cast<uint32_t>(m_offset);
+  if (reverse)
+    relative = uint32_t{0} - relative;
+  const int32_t count = std::bit_cast<int32_t>(relative);
   m_lastRaw = raw;
   m_lastTime = now;
   m_haveLast = true;

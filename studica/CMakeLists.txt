@@ -47,7 +47,7 @@ if(WPILIB_WITH_STUDICA)
 endif()
 
 if(WPILIB_WITH_TESTS)
-    foreach(variant good bad_abi)
+    foreach(variant good bad_abi incomplete)
         add_library(studica_test_plugin_${variant} SHARED
             tests/plugin/LoopbackPlugin.cpp
             src/backend/LoopbackBackend.cpp
@@ -57,8 +57,10 @@ if(WPILIB_WITH_TESTS)
         set_property(TARGET studica_test_plugin_${variant} PROPERTY FOLDER "tests")
     endforeach()
     target_compile_definitions(studica_test_plugin_bad_abi PRIVATE HALSIMSTUDICA_TEST_BAD_ABI)
+    target_compile_definitions(studica_test_plugin_incomplete PRIVATE HALSIMSTUDICA_TEST_INCOMPLETE)
     wpilib_add_test(studica
         tests/main.cpp
+        tests/conversion/EncoderStateTest.cpp
         tests/backend/BackendPluginTest.cpp
         tests/runtime/UniqueResourceTest.cpp
         tests/runtime/TerminationHandlersTest.cpp

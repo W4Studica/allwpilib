@@ -387,9 +387,7 @@ void HALSimStudica::PollEncoder(EncoderPin& pin) {
         pin.vmxA = *vmxA;
         pin.vmxB = *vmxB;
         pin.claimFailedLogged = false;
-        int32_t raw = 0;
-        pin.state.Initialize(m_backend->GetEncoderCount(pin.vmxA, &raw) ? raw
-                                                                        : 0);
+        pin.haveBaseline = false;
         std::printf("HALSim Studica: Encoder %d -> VMX channels %d/%d\n",
                     pin.index, pin.vmxA, pin.vmxB);
       } else if (!pin.claimFailedLogged) {
@@ -403,6 +401,10 @@ void HALSimStudica::PollEncoder(EncoderPin& pin) {
     if (pin.applied) {
       int32_t raw = 0;
       if (m_backend->GetEncoderCount(pin.vmxA, &raw)) {
+        if (!pin.haveBaseline) {
+          pin.state.Initialize(raw);
+          pin.haveBaseline = true;
+        }
         const auto reading =
             pin.state.Update(raw, resetRequested, reverse, distancePerPulse,
                              std::chrono::steady_clock::now());
@@ -424,7 +426,7 @@ void HALSimStudica::PollEncoder(EncoderPin& pin) {
       HALSIM_SetEncoderDirection(i, direction);
     }
   }
-  if (resetRequested) {
+  if (resetRequested && publish) {
     HALSIM_SetEncoderReset(i, false);
   }
 }

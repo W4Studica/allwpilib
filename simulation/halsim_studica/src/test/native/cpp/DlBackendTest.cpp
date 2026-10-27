@@ -154,3 +154,12 @@ TEST_CASE("Loaded plugin separates missing digital input from LOW",
   REQUIRE(backend->TryGetDigital(99, &value));
   REQUIRE_FALSE(value);
 }
+
+TEST_CASE("Plugin missing a legacy required callback is rejected",
+          "[studica][plugin]") {
+  std::string error;
+  auto backend =
+      LoadBackendPlugin(HALSIMSTUDICA_TEST_INCOMPLETE_PLUGIN, &error);
+  REQUIRE_FALSE(backend);
+  REQUIRE(error.find("incomplete") != std::string::npos);
+}
