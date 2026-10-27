@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <mutex>
+
+#include "wpi/hal/simulation/I2CData.h"
 #include "wpi/hal/simulation/SimCallbackRegistry.hpp"
 #include "wpi/hal/simulation/SimDataValue.hpp"
 
@@ -14,6 +17,13 @@ class I2CData {
   HAL_SIMCALLBACKREGISTRY_DEFINE_NAME(Write)
 
  public:
+  // Also serializes close against outstanding transactions; callbacks may query
+  // this port.
+  std::recursive_mutex transactionMutex;
+  HAL_I2CTransactionCallback transaction = nullptr;
+  void* transactionParam = nullptr;
+  int32_t transactionUid = 0;
+  int32_t nextTransactionUid = 1;
   void Write(int32_t deviceAddress, const uint8_t* dataToSend,
              int32_t sendSize);
   void Read(int32_t deviceAddress, uint8_t* buffer, int32_t count);

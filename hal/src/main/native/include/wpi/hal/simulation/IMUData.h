@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "wpi/hal/IMUTypes.h"
 #include "wpi/hal/Types.h"
 #include "wpi/hal/simulation/NotifyListener.h"
 
@@ -24,6 +25,10 @@ void HALSIM_SetIMUAccelY(double accel);
 void HALSIM_SetIMUAccelZ(double accel);
 
 void HALSIM_SetIMUYaw(double angle);
+
+/// Publishes a complete quaternion and its timestamp (HAL monotonic
+/// nanoseconds).
+void HALSIM_SetIMUQuaternion(const HAL_Quaternion* quat);
 
 #ifdef __cplusplus
 }  // extern "C"

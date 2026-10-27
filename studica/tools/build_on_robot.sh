@@ -94,7 +94,7 @@ run mkdir -p "$OUT_DIR"
 info "libstudica.so"
 runtime_sources=()
 for source in "$STUDICA_DIR"/src/*.cpp; do
-  [[ "$source" == */StudicaBackend.cpp ]] || runtime_sources+=("$source")
+  [[ "$source" == */StudicaBackend.cpp || "$source" == */Titan.cpp ]] || runtime_sources+=("$source")
 done
 run g++ -std=c++20 -shared -fPIC -O2 -Wall -Wextra -I"$STUDICA_DIR/include" \
   "${runtime_sources[@]}" -ldl -lpthread -o "$OUT_DIR/libstudica.so"

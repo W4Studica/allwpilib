@@ -2,7 +2,7 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
-#include "wpi/studica/DlBackend.hpp"
+#include "wpi/studica/detail/DlBackend.hpp"
 
 #include <cstdint>
 #include <cstdlib>
@@ -10,7 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "wpi/studica/HardwareBackend.hpp"
+#include "wpi/studica/detail/HardwareBackend.hpp"
 
 using namespace wpi::studica;
 
@@ -18,7 +18,8 @@ extern "C" int HALSIM_InitExtension(void);
 
 #ifndef _WIN32
 
-TEST_CASE("Plugin backend works through the C ABI", "[halsim_studica][plugin]") {
+TEST_CASE("Plugin backend works through the C ABI",
+          "[halsim_studica][plugin]") {
   std::string error;
   auto backend = LoadBackendPlugin(HALSIMSTUDICA_TEST_PLUGIN, &error);
   INFO(error);
@@ -55,7 +56,8 @@ TEST_CASE("Plugin backend works through the C ABI", "[halsim_studica][plugin]") 
   REQUIRE(backend->GetImu(&sample));
   REQUIRE(sample.yawDeg == 0.0);
 
-  // PWM: claimed once, a channel used by a digital pin cannot be reused, released and claimable again.
+  // PWM: claimed once, a channel used by a digital pin cannot be reused,
+  // released and claimable again.
   REQUIRE(backend->InitPwm(15, 20000));
   REQUIRE_FALSE(backend->InitPwm(15, 20000));
   REQUIRE_FALSE(backend->InitPwm(5, 20000));
@@ -78,14 +80,16 @@ TEST_CASE("Loading a missing library reports a dlopen error",
 TEST_CASE("A library that is not a backend plugin is rejected",
           "[halsim_studica][plugin]") {
   std::string error;
-  REQUIRE(LoadBackendPlugin(HALSIMSTUDICA_TEST_NOT_A_PLUGIN, &error) == nullptr);
+  REQUIRE(LoadBackendPlugin(HALSIMSTUDICA_TEST_NOT_A_PLUGIN, &error) ==
+          nullptr);
   REQUIRE(error.find("missing") != std::string::npos);
 }
 
 TEST_CASE("A plugin with a different ABI version is rejected",
           "[halsim_studica][plugin]") {
   std::string error;
-  REQUIRE(LoadBackendPlugin(HALSIMSTUDICA_TEST_BAD_ABI_PLUGIN, &error) == nullptr);
+  REQUIRE(LoadBackendPlugin(HALSIMSTUDICA_TEST_BAD_ABI_PLUGIN, &error) ==
+          nullptr);
   REQUIRE(error.find("ABI mismatch") != std::string::npos);
 }
 
@@ -112,4 +116,28 @@ TEST_CASE("The extension refuses to initialize when its backend cannot load",
   unsetenv("HALSIMSTUDICA_BACKEND");
 }
 
+#endif
+
+#ifndef _WIN32
+TEST_CASE("ABI v3 forwards capture and I2C lifecycle", "[studica][plugin]") {
+  std::string error;
+  auto backend = LoadBackendPlugin(HALSIMSTUDICA_TEST_PLUGIN, &error);
+  REQUIRE(backend != nullptr);
+  REQUIRE(backend->InitI2c());
+  REQUIRE_FALSE(backend->TransactionI2c(0x50, nullptr, 0, nullptr, 0));
+  backend->ReleaseI2c();
+  REQUIRE(backend->InitI2c());
+  backend->ReleaseI2c();
+  REQUIRE(backend->InitDutyCycle(12));
+  DutyCycleReading reading;
+  REQUIRE(backend->GetDutyCycle(12, &reading));
+  REQUIRE(reading.frequencyHz == 0);
+  REQUIRE_FALSE(backend->InitDigital(12, true));
+  backend->ReleaseDutyCycle(12);
+  REQUIRE(backend->InitInterrupt(12));
+  InterruptEvent event;
+  REQUIRE_FALSE(backend->ReadInterrupt(12, &event));
+  backend->ReleaseInterrupt(12);
+  REQUIRE(backend->InitDigital(12, true));
+}
 #endif

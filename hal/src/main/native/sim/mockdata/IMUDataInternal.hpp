@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <mutex>
+
+#include "wpi/hal/IMUTypes.h"
 #include "wpi/hal/simulation/SimDataValue.hpp"
 
 namespace wpi::hal {
@@ -24,6 +27,8 @@ class IMUData {
   HAL_SIMDATAVALUE_DEFINE_NAME(Yaw)
 
  public:
+  std::mutex quaternionMutex;
+  HAL_Quaternion quaternion{0, 1, 0, 0, 0};
   SimDataValue<double, HAL_MakeDouble, GetAngleXName> angleX{0};
   SimDataValue<double, HAL_MakeDouble, GetAngleYName> angleY{0};
   SimDataValue<double, HAL_MakeDouble, GetAngleZName> angleZ{0};

@@ -2,6 +2,8 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
+#include <limits>
+
 #include "../PortsInternal.hpp"
 #include "I2CDataInternal.hpp"
 
@@ -17,6 +19,12 @@ void InitializeI2CData() {
 I2CData* wpi::hal::SimI2CData;
 
 void I2CData::ResetData() {
+  {
+    std::scoped_lock lock{transactionMutex};
+    transaction = nullptr;
+    transactionParam = nullptr;
+    transactionUid = 0;
+  }
   initialized.Reset(false);
   read.Reset();
   write.Reset();
@@ -32,6 +40,35 @@ void I2CData::Read(int32_t deviceAddress, uint8_t* buffer, int32_t count) {
 }
 
 extern "C" {
+int32_t HALSIM_RegisterI2CTransactionCallback(
+    int32_t index, HAL_I2CTransactionCallback callback, void* param) {
+  if (index < 0 || index >= I2C_PORTS || !callback) {
+    return -1;
+  }
+  auto& data = SimI2CData[index];
+  std::scoped_lock lock{data.transactionMutex};
+  if (data.transaction ||
+      data.nextTransactionUid == std::numeric_limits<int32_t>::max()) {
+    return -1;
+  }
+  data.transaction = callback;
+  data.transactionParam = param;
+  data.transactionUid = data.nextTransactionUid++;
+  return data.transactionUid;
+}
+void HALSIM_CancelI2CTransactionCallback(int32_t index, int32_t uid) {
+  if (index < 0 || index >= I2C_PORTS) {
+    return;
+  }
+  auto& data = SimI2CData[index];
+  std::scoped_lock lock{data.transactionMutex};
+  if (uid > 0 && uid == data.transactionUid) {
+    data.transaction = nullptr;
+    data.transactionParam = nullptr;
+    data.transactionUid = 0;
+  }
+}
+
 void HALSIM_ResetI2CData(int32_t index) {
   SimI2CData[index].ResetData();
 }

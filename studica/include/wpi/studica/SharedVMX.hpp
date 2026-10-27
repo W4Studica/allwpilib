@@ -14,16 +14,19 @@ namespace wpi::studica {
  * The one VMXPi of this process, created on first use.
  *
  * The Studica driver constructors default their last argument to
- * std::make_shared<VMXPi>(true, 50), i.e. a new VMXPi per device. MEASURED on a VMX-pi
- * (Ubuntu 26.04, kernel 7.0): two VMXPi in one process break the SPI link (hundreds of
- * write CRC errors) and crash on exit, one works. So creating a Studica object without
- * passing a VMXPi is a bug. studica_drivers must not be modified, so always pass this:
+ * std::make_shared<VMXPi>(true, 50), i.e. a new VMXPi per device. MEASURED on a
+ * VMX-pi (Ubuntu 26.04, kernel 7.0): two VMXPi in one process break the SPI
+ * link (hundreds of write CRC errors) and crash on exit, one works. So creating
+ * a Studica object without passing a VMXPi is a bug. studica_drivers must not
+ * be modified, so always pass the shared instance when using
+ * wpi::studica::drivers:
  *
- *   studica_driver::Titan titan(42, 20000, 0.0f, wpi::studica::SharedVMX());
+ *   wpi::studica::drivers::Titan titan(42, 20000, 0.0f,
+ * wpi::studica::SharedVMX());
  *
- * The halsim_studica Studica backend uses the same instance, so devices created by robot
- * code and devices driven by the simulation HAL share one VMXPi. Link against
- * studica_hardware (the same library the extension loads) to call this.
+ * The halsim_studica Studica backend uses the same instance, so devices created
+ * by robot code and devices driven by the simulation HAL share one VMXPi. Link
+ * against studica_hardware (the same library the extension loads) to call this.
  */
 std::shared_ptr<VMXPi> SharedVMX();
 

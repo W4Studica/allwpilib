@@ -2,10 +2,11 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
-#include "wpi/studica/TerminationHandlers.hpp"
+#include "wpi/studica/detail/TerminationHandlers.hpp"
+
+#include <chrono>
 
 #include <catch2/catch_test_macros.hpp>
-#include <chrono>
 
 #if !defined(_WIN32)
 
@@ -19,10 +20,12 @@ int gPipeFd = -1;
 
 void PreviousHandler(int) {
   const char byte = 'x';
-  [[maybe_unused]] auto ignored = write(gPipeFd, &byte, 1);
+  [[maybe_unused]]
+  auto ignored = write(gPipeFd, &byte, 1);
 }
 
-// Runs `body` in a child process; returns its wait status and whether the previous handler ran.
+// Runs `body` in a child process; returns its wait status and whether the
+// previous handler ran.
 template <typename F>
 int RunInChild(F body, bool* handlerRan) {
   int fds[2];
@@ -46,7 +49,8 @@ int RunInChild(F body, bool* handlerRan) {
 
 }  // namespace
 
-TEST_CASE("SIGTERM runs the previous handler, then ends the process", "[halsim_studica]") {
+TEST_CASE("SIGTERM runs the previous handler, then ends the process",
+          "[halsim_studica]") {
   bool ran = false;
   int status = RunInChild(
       [] {
@@ -61,7 +65,8 @@ TEST_CASE("SIGTERM runs the previous handler, then ends the process", "[halsim_s
   REQUIRE(ran);
 }
 
-TEST_CASE("SIGINT runs the previous handler, then ends the process", "[halsim_studica]") {
+TEST_CASE("SIGINT runs the previous handler, then ends the process",
+          "[halsim_studica]") {
   bool ran = false;
   int status = RunInChild(
       [] {
@@ -76,7 +81,8 @@ TEST_CASE("SIGINT runs the previous handler, then ends the process", "[halsim_st
   REQUIRE(ran);
 }
 
-TEST_CASE("a signal without a handler keeps its default action", "[halsim_studica]") {
+TEST_CASE("a signal without a handler keeps its default action",
+          "[halsim_studica]") {
   bool ran = false;
   int status = RunInChild(
       [] {
@@ -97,7 +103,8 @@ void HangingHandler(int) {
   }
 }
 
-TEST_CASE("a previous handler that hangs is cut short by SIGALRM", "[halsim_studica]") {
+TEST_CASE("a previous handler that hangs is cut short by SIGALRM",
+          "[halsim_studica]") {
   bool ran = false;
   auto start = std::chrono::steady_clock::now();
   int status = RunInChild(
@@ -108,20 +115,27 @@ TEST_CASE("a previous handler that hangs is cut short by SIGALRM", "[halsim_stud
         pause();
       },
       &ran);
-  auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  auto seconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+          .count();
   REQUIRE(WIFSIGNALED(status));
   REQUIRE(WTERMSIG(status) == SIGALRM);
   REQUIRE(seconds < 3.0);
 }
 
-TEST_CASE("a handler installed after InstallTerminationHandlers is taken over on the next call", "[halsim_studica]") {
+TEST_CASE(
+    "a handler installed after InstallTerminationHandlers is taken over on the "
+    "next call",
+    "[halsim_studica]") {
   bool ran = false;
   int status = RunInChild(
       [] {
-        wpi::studica::InstallTerminationHandlers();  // no handler yet: nothing happens
-        signal(SIGTERM, PreviousHandler);         // the VMX HAL installs its own later
+        wpi::studica::InstallTerminationHandlers();  // no handler yet: nothing
+                                                     // happens
+        signal(SIGTERM, PreviousHandler);  // the VMX HAL installs its own later
         wpi::studica::InstallTerminationHandlers();
-        wpi::studica::InstallTerminationHandlers();  // already ours: must not chain to itself
+        wpi::studica::InstallTerminationHandlers();  // already ours: must not
+                                                     // chain to itself
         raise(SIGTERM);
         pause();
       },

@@ -21,9 +21,12 @@ install(DIRECTORY include/ DESTINATION "${include_dest}")
 
 if(WPILIB_WITH_STUDICA)
     add_subdirectory(drivers)
-    add_library(studica_hardware SHARED src/StudicaBackend.cpp)
+    add_library(studica_hardware SHARED src/StudicaBackend.cpp src/DeviceConversions.cpp src/Titan.cpp)
     target_compile_features(studica_hardware PRIVATE cxx_std_20)
-    target_include_directories(studica_hardware PUBLIC include)
+    target_include_directories(studica_hardware PUBLIC include PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../hal/src/main/native/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../wpiutil/src/main/native/include"
+    )
     target_link_libraries(studica_hardware PRIVATE studica_drivers)
     set_property(TARGET studica_hardware PROPERTY FOLDER "libraries")
     install(TARGETS studica_hardware EXPORT studica_hardware)
@@ -40,6 +43,6 @@ if(WPILIB_WITH_TESTS)
         set_property(TARGET studica_test_plugin_${variant} PROPERTY FOLDER "tests")
     endforeach()
     target_compile_definitions(studica_test_plugin_bad_abi PRIVATE HALSIMSTUDICA_TEST_BAD_ABI)
-    wpilib_add_test(studica tests/main.cpp tests/TitanEnableGuardTest.cpp tests/TerminationHandlersTest.cpp)
+    wpilib_add_test(studica tests/main.cpp tests/TitanEnableGuardTest.cpp tests/TitanControlTest.cpp tests/TerminationHandlersTest.cpp)
     target_link_libraries(studica_test studica hal)
 endif()

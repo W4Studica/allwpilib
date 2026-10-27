@@ -11,14 +11,15 @@
 #include <stdexcept>
 #include <utility>
 
-namespace wpi::studica {
+namespace wpi::studica::detail {
 
 /**
  * Two independent freshness checks for TitanEnableGuard's EnabledSource.
  * FeedControlLoop() belongs in the successfully completed robot control cycle;
  * FeedDriverStation() belongs after receiving a new valid DS packet. Never feed
- * either one from the guard thread or just because a cached HAL value is enabled.
- * This helper does not receive DS packets or change the simulation DriverStation.
+ * either one from the guard thread or just because a cached HAL value is
+ * enabled. This helper does not receive DS packets or change the simulation
+ * DriverStation.
  */
 class ControlLoopWatchdog {
  public:
@@ -63,4 +64,4 @@ class ControlLoopWatchdog {
   std::optional<Clock::time_point> m_ds;
 };
 
-}  // namespace wpi::studica
+}  // namespace wpi::studica::detail

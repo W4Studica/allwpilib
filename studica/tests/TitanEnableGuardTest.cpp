@@ -2,8 +2,7 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
-#include "wpi/studica/TitanEnableGuard.hpp"
-#include "wpi/studica/ControlLoopWatchdog.hpp"
+#include "wpi/studica/detail/TitanEnableGuard.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -14,8 +13,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "wpi/hal/simulation/DriverStationData.h"
+#include "wpi/studica/detail/ControlLoopWatchdog.hpp"
 
-using wpi::studica::TitanEnableGuard;
+using wpi::studica::detail::TitanEnableGuard;
 
 namespace {
 
@@ -32,7 +32,7 @@ struct FakeTitan {
   std::vector<bool> calls;
 };
 
-// A Titan whose switch also repeats its state, like wpi::studica::StudicaTitan.
+// A Titan whose switch also repeats its state, like the internal TitanEnableSwitch.
 struct KeepAliveTitan : FakeTitan {
   void KeepAlive() {
     std::scoped_lock lock{mutex};
@@ -67,14 +67,16 @@ struct DsRestore {
 
 }  // namespace
 
-TEST_CASE("The first poll always tells the Titan its state", "[halsim_studica][titan]") {
+TEST_CASE("The first poll always tells the Titan its state",
+          "[halsim_studica][titan]") {
   FakeTitan titan;
   TitanEnableGuard<FakeTitan> guard{titan, [] { return false; }};
   guard.Poll();
   REQUIRE(titan.Calls() == std::vector<bool>{false});
 }
 
-TEST_CASE("Enable is sent only when the state changes", "[halsim_studica][titan]") {
+TEST_CASE("Enable is sent only when the state changes",
+          "[halsim_studica][titan]") {
   FakeTitan titan;
   std::atomic<bool> enabled{false};
   TitanEnableGuard<FakeTitan> guard{titan, [&] { return enabled.load(); }};
@@ -108,11 +110,14 @@ TEST_CASE("Stopping disables the Titan even while the robot is enabled",
 TEST_CASE("Destroying a guard that never started disables the Titan",
           "[halsim_studica][titan]") {
   FakeTitan titan;
-  { TitanEnableGuard<FakeTitan> guard{titan, [] { return true; }}; }
+  {
+    TitanEnableGuard<FakeTitan> guard{titan, [] { return true; }};
+  }
   REQUIRE(titan.Calls() == std::vector<bool>{false});
 }
 
-TEST_CASE("The polling thread follows the robot state", "[halsim_studica][titan]") {
+TEST_CASE("The polling thread follows the robot state",
+          "[halsim_studica][titan]") {
   FakeTitan titan;
   std::atomic<bool> enabled{false};
   TitanEnableGuard<FakeTitan> guard{titan, [&] { return enabled.load(); },
@@ -131,13 +136,15 @@ TEST_CASE("The polling thread follows the robot state", "[halsim_studica][titan]
   REQUIRE(calls.back() == false);
 }
 
-TEST_CASE("The default source reads the HAL control word", "[halsim_studica][titan]") {
+TEST_CASE("The default source reads the HAL control word",
+          "[halsim_studica][titan]") {
   DsRestore restore;
   using Guard = TitanEnableGuard<FakeTitan>;
 
   HALSIM_SetDriverStationDsAttached(false);
   HALSIM_SetDriverStationEnabled(true);
-  // Enabled but no DS attached: the sim HAL reports a zero control word, so disabled.
+  // Enabled but no DS attached: the sim HAL reports a zero control word, so
+  // disabled.
   REQUIRE_FALSE(Guard::HalEnabled());
 
   HALSIM_SetDriverStationDsAttached(true);
@@ -168,8 +175,10 @@ TEST_CASE("A guard with the default source follows the simulated DS",
   REQUIRE(titan.Calls() == std::vector<bool>{false, true, false});
 }
 
-TEST_CASE("A Titan with KeepAlive() hears its state again on every poll, but Enable() only on a change",
-          "[halsim_studica][titan]") {
+TEST_CASE(
+    "A Titan with KeepAlive() hears its state again on every poll, but "
+    "Enable() only on a change",
+    "[halsim_studica][titan]") {
   KeepAliveTitan titan;
   TitanEnableGuard<KeepAliveTitan> guard{titan, [] { return true; }};
   guard.Poll();  // the first pass: Enable(true)
@@ -182,7 +191,8 @@ TEST_CASE("A Titan with KeepAlive() hears its state again on every poll, but Ena
   REQUIRE(titan.KeepAlives() == 3);
 }
 
-TEST_CASE("A Titan without KeepAlive() still works", "[halsim_studica][titan]") {
+TEST_CASE("A Titan without KeepAlive() still works",
+          "[halsim_studica][titan]") {
   FakeTitan titan;
   TitanEnableGuard<FakeTitan> guard{titan, [] { return true; }};
   guard.Poll();
@@ -190,10 +200,11 @@ TEST_CASE("A Titan without KeepAlive() still works", "[halsim_studica][titan]") 
   REQUIRE(titan.Calls() == std::vector<bool>{true});
 }
 
-TEST_CASE("Stalled control or DS input disables Titan even with cached enabled state",
-          "[halsim_studica][titan][watchdog]") {
+TEST_CASE(
+    "Stalled control or DS input disables Titan even with cached enabled state",
+    "[halsim_studica][titan][watchdog]") {
   using namespace std::chrono_literals;
-  using Watchdog = wpi::studica::ControlLoopWatchdog;
+  using Watchdog = wpi::studica::detail::ControlLoopWatchdog;
   using Guard = TitanEnableGuard<KeepAliveTitan>;
   DsRestore restore;
   HALSIM_SetDriverStationDsAttached(true);
@@ -238,8 +249,11 @@ TEST_CASE("Stalled control or DS input disables Titan even with cached enabled s
   REQUIRE_FALSE(titan.Calls().back());
 }
 
-TEST_CASE("Watchdog rejects nonpositive deadlines", "[halsim_studica][titan][watchdog]") {
+TEST_CASE("Watchdog rejects nonpositive deadlines",
+          "[halsim_studica][titan][watchdog]") {
   using namespace std::chrono_literals;
-  REQUIRE_THROWS_AS((wpi::studica::ControlLoopWatchdog{0ms, 100ms}), std::invalid_argument);
-  REQUIRE_THROWS_AS((wpi::studica::ControlLoopWatchdog{100ms, -1ms}), std::invalid_argument);
+  REQUIRE_THROWS_AS((wpi::studica::detail::ControlLoopWatchdog{0ms, 100ms}),
+                    std::invalid_argument);
+  REQUIRE_THROWS_AS((wpi::studica::detail::ControlLoopWatchdog{100ms, -1ms}),
+                    std::invalid_argument);
 }

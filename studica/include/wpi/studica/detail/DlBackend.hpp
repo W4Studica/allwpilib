@@ -7,16 +7,16 @@
 #include <memory>
 #include <string>
 
-#include "wpi/studica/HardwareBackend.hpp"
+#include "wpi/studica/detail/HardwareBackend.hpp"
 
 namespace wpi::studica {
 
 /**
- * Loads a backend plugin (see BackendApi.h) with dlopen and adapts it to HardwareBackend.
- * Returns nullptr and fills *error if the library cannot be loaded, lacks the entry
- * points, or was built for a different ABI version.
+ * Loads a backend plugin (see BackendApi.h) with dlopen and adapts it to
+ * HardwareBackend. Returns nullptr and fills *error if the library cannot be
+ * loaded, lacks the entry points, or was built for a different ABI version.
  */
 std::unique_ptr<HardwareBackend> LoadBackendPlugin(const std::string& path,
-                                              std::string* error);
+                                                   std::string* error);
 
 }  // namespace wpi::studica

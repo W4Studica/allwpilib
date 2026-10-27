@@ -7,22 +7,23 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <set>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <vector>
 
 #include "wpi/hal/simulation/NotifyListener.h"
 #include "wpi/halsim/studica/ChannelMap.hpp"
-#include "wpi/studica/HardwareBackend.hpp"
-#include "wpi/studica/DeviceConversions.hpp"
+#include "wpi/studica/detail/DeviceConversions.hpp"
+#include "wpi/studica/detail/HardwareBackend.hpp"
 
 namespace wpi::studica {
 
 /**
- * Connects the simulation HAL to VMX hardware. Currently digital I/O, analog inputs, quadrature
- * encoders, PWM outputs, the IMU and the battery voltage.
+ * Connects the simulation HAL to VMX hardware. Currently digital I/O, analog
+ * inputs, quadrature encoders, PWM outputs, I2C, duty-cycle capture, digital
+ * edges, the IMU and battery voltage.
  *
  * Pin state (initialized, direction) is reconciled by a polling thread because
  * the sim HAL sets "initialized" before it sets the direction, so the mode
@@ -38,7 +39,7 @@ class HALSimStudica {
 
   /// Registers sim callbacks and, if spawnPollThread, starts the poll thread.
   /// Tests pass false and call Poll() themselves for deterministic behavior.
-  void Start(bool spawnPollThread = true);
+  bool Start(bool spawnPollThread = true);
   void Stop();
 
   /// One reconcile/poll pass. Public so tests can drive it without the thread.
@@ -53,7 +54,9 @@ class HALSimStudica {
     // State currently applied to the backend.
     bool applied = false;
     bool appliedInput = false;
-    bool claimFailedLogged = false;  // log a failed claim once, not on every poll
+    bool interruptApplied = false;
+    bool claimFailedLogged =
+        false;  // log a failed claim once, not on every poll
   };
 
   struct AnalogPin {
@@ -82,8 +85,20 @@ class HALSimStudica {
     bool claimFailedLogged = false;
   };
 
-  static void OnDioValue(const char* name, void* param,
-                         const HAL_Value* value);
+  struct DutyCyclePin {
+    int channel = 0;
+    int vmxChannel = -1;
+    bool applied = false;
+    bool claimFailedLogged = false;
+  };
+
+  static int32_t OnI2cTransaction(void* param, int32_t address,
+                                  const uint8_t* tx, int32_t txSize,
+                                  uint8_t* rx, int32_t rxSize);
+  void PollI2c();
+  void PollDutyCycle(DutyCyclePin& pin);
+  bool PollInterrupt(DioPin& pin, bool ownedByEncoder);
+  static void OnDioValue(const char* name, void* param, const HAL_Value* value);
 
   void PollDio(DioPin& pin, bool ownedByEncoder);
   void PollAnalog(AnalogPin& pin);
@@ -104,6 +119,9 @@ class HALSimStudica {
   std::vector<AnalogPin> m_analog;
   std::vector<EncoderPin> m_encoders;
   std::vector<PwmPin> m_pwm;
+  std::vector<DutyCyclePin> m_dutyCycles;
+  int m_i2cCallback = 0;
+  bool m_i2cApplied = false;
   int m_batteryPolls = 0;
   bool m_batteryFailedLogged = false;
   std::mutex m_mutex;

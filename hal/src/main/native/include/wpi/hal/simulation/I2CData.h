@@ -13,6 +13,18 @@ extern "C" {
 
 void HALSIM_ResetI2CData(int32_t index);
 
+/// Returns 0 on success, -1 on a bus error. Buffers are valid only during the
+/// call.
+typedef int32_t (*HAL_I2CTransactionCallback)(void* param, int32_t address,
+                                              const uint8_t* tx, int32_t txSize,
+                                              uint8_t* rx, int32_t rxSize);
+/// One provider per port. Returns a positive uid, or -1 if already
+/// owned/invalid.
+int32_t HALSIM_RegisterI2CTransactionCallback(
+    int32_t index, HAL_I2CTransactionCallback callback, void* param);
+/// Waits for an in-flight transaction before releasing its provider.
+void HALSIM_CancelI2CTransactionCallback(int32_t index, int32_t uid);
+
 int32_t HALSIM_RegisterI2CInitializedCallback(int32_t index,
                                               HAL_NotifyCallback callback,
                                               void* param,

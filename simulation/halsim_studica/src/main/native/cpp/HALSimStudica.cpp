@@ -8,14 +8,18 @@
 #include <cstdio>
 #include <utility>
 
+#include "wpi/hal/HAL.h"
 #include "wpi/hal/Ports.h"
 #include "wpi/hal/simulation/AnalogInData.h"
 #include "wpi/hal/simulation/DIOData.h"
+#include "wpi/hal/simulation/DigitalEdgeData.h"
+#include "wpi/hal/simulation/DutyCycleData.h"
 #include "wpi/hal/simulation/EncoderData.h"
+#include "wpi/hal/simulation/I2CData.h"
 #include "wpi/hal/simulation/IMUData.h"
 #include "wpi/hal/simulation/PWMData.h"
 #include "wpi/hal/simulation/RoboRioData.h"
-#include "wpi/studica/TerminationHandlers.hpp"
+#include "wpi/studica/detail/TerminationHandlers.hpp"
 
 using namespace wpi::studica;
 
@@ -25,7 +29,8 @@ constexpr auto kPollPeriod = std::chrono::milliseconds(10);
 constexpr int kBatteryPollEvery = 10;
 }  // namespace
 
-HALSimStudica::HALSimStudica(std::unique_ptr<HardwareBackend> backend, Config config)
+HALSimStudica::HALSimStudica(std::unique_ptr<HardwareBackend> backend,
+                             Config config)
     : m_backend{std::move(backend)},
       m_config{std::move(config)},
       m_maps{m_config.maps} {
@@ -56,6 +61,14 @@ HALSimStudica::HALSimStudica(std::unique_ptr<HardwareBackend> backend, Config co
     }
   }
 
+  m_dutyCycles.resize(HAL_GetNumDutyCycles());
+  for (int ch = 0; ch < static_cast<int>(m_dutyCycles.size()); ++ch) {
+    m_dutyCycles[ch].channel = ch;
+    if (auto vmx = m_maps.dio.Get(ch)) {
+      m_dutyCycles[ch].vmxChannel = *vmx;
+    }
+  }
+
   int numAnalog = HAL_GetNumAnalogInputs();
   m_analog.resize(numAnalog);
   for (int ch = 0; ch < numAnalog; ++ch) {
@@ -70,9 +83,21 @@ HALSimStudica::~HALSimStudica() {
   Stop();
 }
 
-void HALSimStudica::Start(bool spawnPollThread) {
+bool HALSimStudica::Start(bool spawnPollThread) {
   if (m_running.exchange(true)) {
-    return;
+    return true;
+  }
+  if (m_config.i2cPort >= 0) {
+    m_i2cCallback = HALSIM_RegisterI2CTransactionCallback(
+        m_config.i2cPort, &HALSimStudica::OnI2cTransaction, this);
+    if (m_i2cCallback <= 0) {
+      std::fprintf(
+          stderr,
+          "HALSim Studica: I2C port %d already has a transaction provider\n",
+          m_config.i2cPort);
+      m_running = false;
+      return false;
+    }
   }
   for (auto& pin : m_dio) {
     if (pin.vmxChannel >= 0) {
@@ -81,16 +106,18 @@ void HALSimStudica::Start(bool spawnPollThread) {
     }
   }
   if (!spawnPollThread) {
-    return;
+    return true;
   }
   m_thread = std::thread{[this] {
     while (m_running) {
       Poll();
-      // The VMX HAL installs its SIGINT/SIGTERM handlers when it starts, possibly after this extension did.
+      // The VMX HAL installs its SIGINT/SIGTERM handlers when it starts,
+      // possibly after this extension did.
       InstallTerminationHandlers();
       std::this_thread::sleep_for(kPollPeriod);
     }
   }};
+  return true;
 }
 
 void HALSimStudica::Stop() {
@@ -100,7 +127,13 @@ void HALSimStudica::Stop() {
   if (m_thread.joinable()) {
     m_thread.join();
   }
-  // Cancel callbacks before touching the backend so none can run during teardown.
+  // Cancel waits for a transaction; do it before taking m_mutex.
+  if (m_i2cCallback > 0) {
+    HALSIM_CancelI2CTransactionCallback(m_config.i2cPort, m_i2cCallback);
+    m_i2cCallback = 0;
+  }
+  // Cancel callbacks before touching the backend so none can run during
+  // teardown.
   for (auto& pin : m_dio) {
     if (pin.valueCbKey != 0) {
       HALSIM_CancelDIOValueCallback(pin.channel, pin.valueCbKey);
@@ -108,7 +141,21 @@ void HALSimStudica::Stop() {
     }
   }
   std::scoped_lock lock{m_mutex};
+  if (m_i2cApplied) {
+    m_backend->ReleaseI2c();
+    m_i2cApplied = false;
+  }
+  for (auto& pin : m_dutyCycles) {
+    if (pin.applied) {
+      m_backend->ReleaseDutyCycle(pin.vmxChannel);
+      pin.applied = false;
+    }
+  }
   for (auto& pin : m_dio) {
+    if (pin.interruptApplied) {
+      m_backend->ReleaseInterrupt(pin.vmxChannel);
+      pin.interruptApplied = false;
+    }
     if (pin.applied) {
       m_backend->ReleaseDigital(pin.vmxChannel);
       pin.applied = false;
@@ -151,16 +198,25 @@ std::set<int> HALSimStudica::EncoderOwnedDioChannels() const {
       owned.insert(b);
     }
   }
+  for (const auto& pin : m_dutyCycles) {
+    if (pin.vmxChannel >= 0 && HALSIM_GetDutyCycleInitialized(pin.channel)) {
+      owned.insert(pin.channel);
+    }
+  }
   return owned;
 }
 
 void HALSimStudica::Poll() {
   // WPILib's Encoder also creates DigitalInputs on its A/B channels. On VMX a
-  // channel serves one function, so the encoder wins and those DIOs are skipped.
+  // channel serves one function, so the encoder wins and those DIOs are
+  // skipped.
   const std::set<int> encoderOwned = EncoderOwnedDioChannels();
   for (auto& pin : m_dio) {
     if (pin.vmxChannel >= 0) {
-      PollDio(pin, encoderOwned.contains(pin.channel));
+      const bool reserved = encoderOwned.contains(pin.channel);
+      if (!PollInterrupt(pin, reserved)) {
+        PollDio(pin, reserved);
+      }
     }
   }
   for (auto& pin : m_encoders) {
@@ -179,10 +235,17 @@ void HALSimStudica::Poll() {
       PollPwm(pin);
     }
   }
+  for (auto& pin : m_dutyCycles) {
+    if (pin.vmxChannel >= 0) {
+      PollDutyCycle(pin);
+    }
+  }
+  PollI2c();
   PollBattery();
 }
 
-void HALSimStudica::OnDioValue(const char*, void* param, const HAL_Value* value) {
+void HALSimStudica::OnDioValue(const char*, void* param,
+                               const HAL_Value* value) {
   auto* pin = static_cast<DioPin*>(param);
   std::scoped_lock lock{pin->owner->m_mutex};
   // Input pins get their value from hardware; our own HALSIM_SetDIOValue call
@@ -214,16 +277,17 @@ void HALSimStudica::PollDio(DioPin& pin, bool ownedByEncoder) {
         pin.applied = true;
         pin.appliedInput = isInput;
         pin.claimFailedLogged = false;
-        std::printf("HALSim Studica: DIO %d -> VMX channel %d (%s)\n", pin.channel,
-                    pin.vmxChannel, isInput ? "input" : "output");
+        std::printf("HALSim Studica: DIO %d -> VMX channel %d (%s)\n",
+                    pin.channel, pin.vmxChannel, isInput ? "input" : "output");
         if (!isInput) {
           m_backend->SetDigital(pin.vmxChannel, simValue);
         }
       } else if (!pin.claimFailedLogged) {
         pin.claimFailedLogged = true;
-        std::fprintf(stderr,
-                     "HALSim Studica: cannot claim VMX channel %d for DIO %d as %s\n",
-                     pin.vmxChannel, pin.channel, isInput ? "input" : "output");
+        std::fprintf(
+            stderr,
+            "HALSim Studica: cannot claim VMX channel %d for DIO %d as %s\n",
+            pin.vmxChannel, pin.channel, isInput ? "input" : "output");
       }
     }
     if (!initialized) {
@@ -258,13 +322,14 @@ void HALSimStudica::PollAnalog(AnalogPin& pin) {
       pin.applied = m_backend->InitAnalog(pin.vmxChannel);
       if (pin.applied) {
         pin.claimFailedLogged = false;
-        std::printf("HALSim Studica: AnalogIn %d -> VMX channel %d\n", pin.channel,
-                    pin.vmxChannel);
+        std::printf("HALSim Studica: AnalogIn %d -> VMX channel %d\n",
+                    pin.channel, pin.vmxChannel);
       } else if (!pin.claimFailedLogged) {
         pin.claimFailedLogged = true;
-        std::fprintf(stderr,
-                     "HALSim Studica: cannot claim VMX channel %d for AnalogIn %d\n",
-                     pin.vmxChannel, pin.channel);
+        std::fprintf(
+            stderr,
+            "HALSim Studica: cannot claim VMX channel %d for AnalogIn %d\n",
+            pin.vmxChannel, pin.channel);
       }
     }
     if (!initialized) {
@@ -314,22 +379,24 @@ void HALSimStudica::PollEncoder(EncoderPin& pin) {
         pin.vmxB = *vmxB;
         pin.claimFailedLogged = false;
         int32_t raw = 0;
-        pin.state.Initialize(m_backend->GetEncoderCount(pin.vmxA, &raw) ? raw : 0);
-        std::printf("HALSim Studica: Encoder %d -> VMX channels %d/%d\n", pin.index,
-                    pin.vmxA, pin.vmxB);
+        pin.state.Initialize(m_backend->GetEncoderCount(pin.vmxA, &raw) ? raw
+                                                                        : 0);
+        std::printf("HALSim Studica: Encoder %d -> VMX channels %d/%d\n",
+                    pin.index, pin.vmxA, pin.vmxB);
       } else if (!pin.claimFailedLogged) {
         pin.claimFailedLogged = true;
-        std::fprintf(stderr,
-                     "HALSim Studica: cannot claim VMX channels %d/%d for Encoder %d\n",
-                     *vmxA, *vmxB, pin.index);
+        std::fprintf(
+            stderr,
+            "HALSim Studica: cannot claim VMX channels %d/%d for Encoder %d\n",
+            *vmxA, *vmxB, pin.index);
       }
     }
     if (pin.applied) {
       int32_t raw = 0;
       if (m_backend->GetEncoderCount(pin.vmxA, &raw)) {
-        const auto reading = pin.state.Update(
-            raw, resetRequested, reverse, distancePerPulse,
-            std::chrono::steady_clock::now());
+        const auto reading =
+            pin.state.Update(raw, resetRequested, reverse, distancePerPulse,
+                             std::chrono::steady_clock::now());
         count = reading.count;
         rate = reading.rate;
         direction = reading.direction;
@@ -387,12 +454,16 @@ void HALSimStudica::PollImu() {
   HALSIM_SetIMUAccelX(reading.accelX);
   HALSIM_SetIMUAccelY(reading.accelY);
   HALSIM_SetIMUAccelZ(reading.accelZ);
+  const auto q = ImuQuaternion(reading);
+  const HAL_Quaternion quat{HAL_GetMonotonicTime(), q.w, q.x, q.y, q.z};
+  HALSIM_SetIMUQuaternion(&quat);
 }
 
 void HALSimStudica::PollPwm(PwmPin& pin) {
   // See PollDio: no HALSIM_* calls while holding m_mutex.
   const bool initialized = HALSIM_GetPWMInitialized(pin.channel);
-  const int periodMicros = PwmPeriodMicros(HALSIM_GetPWMOutputPeriod(pin.channel));
+  const int periodMicros =
+      PwmPeriodMicros(HALSIM_GetPWMOutputPeriod(pin.channel));
   const int pulseMicros = HALSIM_GetPWMPulseMicrosecond(pin.channel);
   if (!initialized) {
     pin.claimFailedLogged = false;
@@ -400,7 +471,8 @@ void HALSimStudica::PollPwm(PwmPin& pin) {
 
   std::scoped_lock lock{m_mutex};
   // A new frame length needs a new generator.
-  if (pin.applied && (!initialized || pin.appliedPeriodMicros != periodMicros)) {
+  if (pin.applied &&
+      (!initialized || pin.appliedPeriodMicros != periodMicros)) {
     m_backend->ReleasePwm(pin.vmxChannel);
     pin.applied = false;
   }
@@ -414,7 +486,8 @@ void HALSimStudica::PollPwm(PwmPin& pin) {
                   pin.channel, pin.vmxChannel, periodMicros);
     } else if (!pin.claimFailedLogged) {
       pin.claimFailedLogged = true;
-      std::fprintf(stderr, "HALSim Studica: cannot claim VMX channel %d for PWM %d\n",
+      std::fprintf(stderr,
+                   "HALSim Studica: cannot claim VMX channel %d for PWM %d\n",
                    pin.vmxChannel, pin.channel);
     }
   }

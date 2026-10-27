@@ -10,8 +10,8 @@
 #include "wpi/hal/Extensions.h"
 #include "wpi/halsim/studica/ChannelMap.hpp"
 #include "wpi/halsim/studica/HALSimStudica.hpp"
-#include "wpi/studica/TerminationHandlers.hpp"
-#include "wpi/studica/HardwareBackend.hpp"
+#include "wpi/studica/detail/HardwareBackend.hpp"
+#include "wpi/studica/detail/TerminationHandlers.hpp"
 
 using namespace wpi::studica;
 
@@ -23,8 +23,8 @@ static void ReportMap(const char* envName, const char* kind,
   const char* value = std::getenv(envName);
   const bool set = value != nullptr && *value != '\0';
   if (!set) {
-    std::printf("HALSim Studica: %s is not set; no %s channels mapped\n", envName,
-                kind);
+    std::printf("HALSim Studica: %s is not set; no %s channels mapped\n",
+                envName, kind);
   } else if (map.size() == 0) {
     std::fprintf(stderr,
                  "HALSim Studica: %s is set to '%s' but has no valid entry "
@@ -37,10 +37,11 @@ static void ReportMap(const char* envName, const char* kind,
                  entry.c_str());
   }
   for (int vmx : map.DuplicateVmxChannels()) {
-    std::fprintf(stderr,
-                 "HALSim Studica: %s maps more than one channel to VMX channel %d; "
-                 "only one of them can claim it\n",
-                 envName, vmx);
+    std::fprintf(
+        stderr,
+        "HALSim Studica: %s maps more than one channel to VMX channel %d; "
+        "only one of them can claim it\n",
+        envName, vmx);
   }
 }
 
@@ -59,17 +60,26 @@ int HALSIM_InitExtension(void) {
   ReportMap("HALSIMSTUDICA_ANALOG_MAP", "analog", config.maps.analog);
   ReportMap("HALSIMSTUDICA_PWM_MAP", "PWM", config.maps.pwm);
 
+  if (config.i2cPort >= 0) {
+    std::printf(
+        "HALSim Studica: I2C port %d mapped to VMX bus (opened on first "
+        "transaction)\n",
+        config.i2cPort);
+  }
   auto backend = CreateBackend();
   if (!backend) {
     return -1;
   }
 
-  // The VMX HAL's SIGINT/SIGTERM handlers do not end the process on their own. They may not exist yet, so the poll
-  // thread keeps calling this too.
+  // The VMX HAL's SIGINT/SIGTERM handlers do not end the process on their own.
+  // They may not exist yet, so the poll thread keeps calling this too.
   InstallTerminationHandlers();
 
   gSim = std::make_unique<HALSimStudica>(std::move(backend), std::move(config));
-  gSim->Start();
+  if (!gSim->Start()) {
+    gSim.reset();
+    return -1;
+  }
 
   std::puts("HALSim Studica Extension Initialized");
   return 0;

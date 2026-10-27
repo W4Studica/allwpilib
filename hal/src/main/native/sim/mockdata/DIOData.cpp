@@ -16,6 +16,8 @@ void InitializeDIOData() {
 
 DIOData* wpi::hal::SimDIOData;
 void DIOData::ResetData() {
+  edgeCaptureEnabled = false;
+  edge.Reset();
   initialized.Reset(false);
   simDevice = 0;
   value.Reset(true);
@@ -25,6 +27,40 @@ void DIOData::ResetData() {
 }
 
 extern "C" {
+void HALSIM_SetDIOEdgeCaptureEnabled(int32_t index, HAL_Bool enabled) {
+  if (index < 0 || index >= NUM_DIGITAL_CHANNELS) {
+    return;
+  }
+  SimDIOData[index].edgeCaptureEnabled = enabled != 0;
+}
+HAL_Bool HALSIM_GetDIOEdgeCaptureEnabled(int32_t index) {
+  if (index < 0 || index >= NUM_DIGITAL_CHANNELS) {
+    return false;
+  }
+  return SimDIOData[index].edgeCaptureEnabled;
+}
+int32_t HALSIM_RegisterDIOEdgeCallback(int32_t index,
+                                       HAL_DigitalEdgeCallback callback,
+                                       void* param) {
+  if (index < 0 || index >= NUM_DIGITAL_CHANNELS) {
+    return -1;
+  }
+  return SimDIOData[index].edge.Register(callback, param);
+}
+void HALSIM_CancelDIOEdgeCallback(int32_t index, int32_t uid) {
+  if (index < 0 || index >= NUM_DIGITAL_CHANNELS) {
+    return;
+  }
+  SimDIOData[index].edge.Cancel(uid);
+}
+void HALSIM_NotifyDIOEdge(int32_t index, HAL_Bool rising,
+                          uint64_t timestampMicros, uint32_t dropped) {
+  if (index < 0 || index >= NUM_DIGITAL_CHANNELS) {
+    return;
+  }
+  SimDIOData[index].edge(rising, timestampMicros, dropped);
+}
+
 void HALSIM_ResetDIOData(int32_t index) {
   SimDIOData[index].ResetData();
 }

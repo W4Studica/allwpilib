@@ -6,9 +6,9 @@
 #include <cstdlib>
 #include <string>
 
-#include "wpi/studica/DlBackend.hpp"
-#include "wpi/studica/LoopbackBackend.hpp"
-#include "wpi/studica/HardwareBackend.hpp"
+#include "wpi/studica/detail/DlBackend.hpp"
+#include "wpi/studica/detail/HardwareBackend.hpp"
+#include "wpi/studica/detail/LoopbackBackend.hpp"
 
 namespace wpi::studica {
 
@@ -16,7 +16,8 @@ std::unique_ptr<HardwareBackend> CreateBackend() {
   const char* path = std::getenv("HALSIMSTUDICA_BACKEND");
   if (path == nullptr || *path == '\0') {
     std::puts(
-        "HALSim Studica: HALSIMSTUDICA_BACKEND is not set; using the loopback backend "
+        "HALSim Studica: HALSIMSTUDICA_BACKEND is not set; using the loopback "
+        "backend "
         "(no VMX hardware is driven)");
     return std::make_unique<LoopbackBackend>();
   }

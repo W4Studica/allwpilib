@@ -6,10 +6,13 @@
 
 #include <stdint.h>
 
+#include "wpi/hal/simulation/DigitalEdgeData.h"
+#include "wpi/hal/simulation/SimCallbackRegistry.hpp"
 #include "wpi/hal/simulation/SimDataValue.hpp"
 
 namespace wpi::hal {
 class DIOData {
+  HAL_SIMCALLBACKREGISTRY_DEFINE_NAME(Edge)
   HAL_SIMDATAVALUE_DEFINE_NAME(Initialized)
   HAL_SIMDATAVALUE_DEFINE_NAME(Value)
   HAL_SIMDATAVALUE_DEFINE_NAME(PulseLength)
@@ -17,6 +20,8 @@ class DIOData {
   HAL_SIMDATAVALUE_DEFINE_NAME(FilterIndex)
 
  public:
+  std::atomic<bool> edgeCaptureEnabled{false};
+  SimCallbackRegistry<HAL_DigitalEdgeCallback, GetEdgeName> edge;
   SimDataValue<HAL_Bool, HAL_MakeBoolean, GetInitializedName> initialized{
       false};
   std::atomic<HAL_SimDeviceHandle> simDevice;

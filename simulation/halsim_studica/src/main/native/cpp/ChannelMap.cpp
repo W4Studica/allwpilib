@@ -5,10 +5,11 @@
 #include "wpi/halsim/studica/ChannelMap.hpp"
 
 #include <charconv>
+#include <cstdio>
 #include <cstdlib>
-#include <string_view>
 #include <cstring>
 #include <set>
+#include <string_view>
 
 using namespace wpi::studica;
 
@@ -18,7 +19,8 @@ bool ParseInt(std::string_view text, int* out) {
   if (text.empty()) {
     return false;
   }
-  auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), *out);
+  auto [ptr, ec] =
+      std::from_chars(text.data(), text.data() + text.size(), *out);
   return ec == std::errc{} && ptr == text.data() + text.size();
 }
 
@@ -85,5 +87,16 @@ Config Config::FromEnv() {
   config.maps = ChannelMaps::FromEnv();
   const char* imu = std::getenv("HALSIMSTUDICA_IMU");
   config.imu = imu != nullptr && std::strcmp(imu, "1") == 0;
+  const char* backend = std::getenv("HALSIMSTUDICA_BACKEND");
+  config.i2cPort = backend && *backend ? 1 : -1;
+  if (const char* port = std::getenv("HALSIMSTUDICA_I2C_PORT")) {
+    if (!ParseInt(port, &config.i2cPort) || config.i2cPort < -1 ||
+        config.i2cPort > 1) {
+      std::fprintf(stderr,
+                   "HALSim Studica: invalid HALSIMSTUDICA_I2C_PORT; hardware "
+                   "I2C disabled\n");
+      config.i2cPort = -1;
+    }
+  }
   return config;
 }

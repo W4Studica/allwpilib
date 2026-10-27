@@ -16,12 +16,12 @@
 #include "wpi/hal/Encoder.h"
 #include "wpi/hal/IMU.h"
 #include "wpi/hal/PWM.h"
-#include "wpi/hal/simulation/PWMData.h"
-#include "wpi/hal/simulation/RoboRioData.h"
 #include "wpi/hal/simulation/AnalogInData.h"
 #include "wpi/hal/simulation/DIOData.h"
 #include "wpi/hal/simulation/EncoderData.h"
-#include "wpi/studica/LoopbackBackend.hpp"
+#include "wpi/hal/simulation/PWMData.h"
+#include "wpi/hal/simulation/RoboRioData.h"
+#include "wpi/studica/detail/LoopbackBackend.hpp"
 
 using namespace wpi::studica;
 
@@ -58,7 +58,8 @@ struct Fixture {
     config.maps.analog = ChannelMap::Parse("1:30");
     config.maps.pwm = ChannelMap::Parse("3:15");
     config.imu = imuEnabled;
-    sim = std::make_unique<HALSimStudica>(std::move(backend), std::move(config));
+    sim =
+        std::make_unique<HALSimStudica>(std::move(backend), std::move(config));
     sim->Start(false);
   }
   ~Fixture() {
@@ -87,7 +88,8 @@ TEST_CASE("Unmapped channels are ignored", "[halsim_studica]") {
   HALSIM_ResetDIOData(5);
 }
 
-TEST_CASE("Output pin is claimed and follows the sim value", "[halsim_studica]") {
+TEST_CASE("Output pin is claimed and follows the sim value",
+          "[halsim_studica]") {
   Fixture f;
   int32_t status = 0;
   auto handle = HAL_InitializeDIOPort(kDio, false, nullptr, &status);
@@ -108,7 +110,8 @@ TEST_CASE("Output pin is claimed and follows the sim value", "[halsim_studica]")
   REQUIRE_FALSE(f.hw->IsClaimed(kVmx));
 }
 
-TEST_CASE("Input pin publishes hardware changes to the sim", "[halsim_studica]") {
+TEST_CASE("Input pin publishes hardware changes to the sim",
+          "[halsim_studica]") {
   Fixture f;
   int32_t status = 0;
   auto handle = HAL_InitializeDIOPort(kDio, true, nullptr, &status);
@@ -230,8 +233,8 @@ EncoderHandles MakeEncoder(bool reverse = false) {
   EncoderHandles h;
   h.a = HAL_InitializeDIOPort(kEncA, true, nullptr, &status);
   h.b = HAL_InitializeDIOPort(kEncB, true, nullptr, &status);
-  h.enc = HAL_InitializeEncoder(kEncA, kEncB, reverse,
-                                HAL_ENCODER_4X_ENCODING, &status);
+  h.enc = HAL_InitializeEncoder(kEncA, kEncB, reverse, HAL_ENCODER_4X_ENCODING,
+                                &status);
   return h;
 }
 
@@ -267,8 +270,8 @@ TEST_CASE("Encoder claim wins even if the DIOs were polled first",
   f.sim->Poll();
   REQUIRE(f.hw->IsClaimed(kVmxEncA));  // DIO claimed it for now
 
-  auto enc = HAL_InitializeEncoder(kEncA, kEncB, false,
-                                   HAL_ENCODER_4X_ENCODING, &status);
+  auto enc = HAL_InitializeEncoder(kEncA, kEncB, false, HAL_ENCODER_4X_ENCODING,
+                                   &status);
   f.sim->Poll();
   REQUIRE_FALSE(f.hw->IsClaimed(kVmxEncA));
   REQUIRE_FALSE(f.hw->IsClaimed(kVmxEncB));
@@ -399,7 +402,8 @@ TEST_CASE("IMU converts navX units and signs to the WPILib IMU HAL",
   REQUIRE(accel.z == Catch::Approx(9.80665));
 }
 
-TEST_CASE("IMU values are not published while disconnected", "[halsim_studica]") {
+TEST_CASE("IMU values are not published while disconnected",
+          "[halsim_studica]") {
   Fixture f{true};
   f.sim->Poll();
   ImuSample sample;
@@ -408,7 +412,8 @@ TEST_CASE("IMU values are not published while disconnected", "[halsim_studica]")
   f.sim->Poll();
 
   int64_t timestamp = 0;
-  REQUIRE(HAL_GetIMUYawFlat(&timestamp) != Catch::Approx(-45 * 3.14159265 / 180));
+  REQUIRE(HAL_GetIMUYawFlat(&timestamp) !=
+          Catch::Approx(-45 * 3.14159265 / 180));
 }
 
 TEST_CASE("Stopping releases the IMU", "[halsim_studica]") {
@@ -419,7 +424,8 @@ TEST_CASE("Stopping releases the IMU", "[halsim_studica]") {
   REQUIRE_FALSE(f.hw->IsImuClaimed());
 }
 
-TEST_CASE("PWM output is claimed and follows the pulse width", "[halsim_studica]") {
+TEST_CASE("PWM output is claimed and follows the pulse width",
+          "[halsim_studica]") {
   Fixture f;
   int32_t status = 0;
   auto handle = HAL_InitializePWMPort(kPwm, nullptr, &status);
@@ -456,7 +462,8 @@ TEST_CASE("A new PWM frame length restarts the generator", "[halsim_studica]") {
   HAL_SetPWMOutputPeriod(handle, 0, &status);  // 5 ms
   f.sim->Poll();
   REQUIRE(f.hw->PwmPeriod(kVmxPwm) == 5000);
-  REQUIRE(f.hw->PwmPulse(kVmxPwm) == 1500);  // the pulse is written again to the new generator
+  REQUIRE(f.hw->PwmPulse(kVmxPwm) ==
+          1500);  // the pulse is written again to the new generator
 
   HAL_FreePWMPort(handle);
   f.sim->Poll();
@@ -472,7 +479,8 @@ TEST_CASE("Unmapped PWM channels are ignored", "[halsim_studica]") {
   HALSIM_ResetPWMData(7);
 }
 
-TEST_CASE("The battery voltage reaches the RoboRIO sim data", "[halsim_studica]") {
+TEST_CASE("The battery voltage reaches the RoboRIO sim data",
+          "[halsim_studica]") {
   Fixture f;
   f.sim->Poll();  // no reading yet: the sim value is left alone
   const double before = HALSIM_GetRoboRioVInVoltage();

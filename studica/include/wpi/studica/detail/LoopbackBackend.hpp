@@ -4,10 +4,12 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <mutex>
 
-#include "wpi/studica/HardwareBackend.hpp"
+#include "wpi/studica/detail/HardwareBackend.hpp"
+#include "wpi/studica/detail/InterruptQueue.hpp"
 
 namespace wpi::studica {
 
@@ -37,6 +39,22 @@ class LoopbackBackend : public HardwareBackend {
   void SetPwmPulse(int vmxChannel, int pulseMicros) override;
   bool GetBatteryVoltage(double* volts) override;
 
+  bool InitI2c() override;
+  void ReleaseI2c() override;
+  bool TransactionI2c(int address, const uint8_t* tx, int txSize, uint8_t* rx,
+                      int rxSize) override;
+  bool InitDutyCycle(int channel) override;
+  void ReleaseDutyCycle(int channel) override;
+  bool GetDutyCycle(int channel, DutyCycleReading* reading) override;
+  bool InitInterrupt(int channel) override;
+  void ReleaseInterrupt(int channel) override;
+  bool ReadInterrupt(int channel, InterruptEvent* event) override;
+
+  using I2cHandler =
+      std::function<bool(int, const uint8_t*, int, uint8_t*, int)>;
+  void SetI2cHandler(I2cHandler handler);
+  void DriveDutyCycle(int channel, double frequency, double output);
+  void DriveInterrupt(int channel, bool rising, uint64_t timestamp);
   /// Test hooks.
   bool IsClaimed(int vmxChannel);
   bool IsInput(int vmxChannel);
@@ -57,6 +75,10 @@ class LoopbackBackend : public HardwareBackend {
 
  private:
   std::mutex m_mutex;
+  bool m_i2cActive = false;
+  I2cHandler m_i2cHandler;
+  std::map<int, DutyCycleReading> m_dutyCycles;
+  std::map<int, std::shared_ptr<detail::InterruptQueue>> m_interrupts;
   std::map<int, Pin> m_pins;
   std::map<int, double> m_analog;
 

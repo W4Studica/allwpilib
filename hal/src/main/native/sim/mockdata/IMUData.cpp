@@ -18,6 +18,13 @@ IMUData* SimIMUData;
 }  // namespace wpi::hal
 
 extern "C" {
+void HALSIM_SetIMUQuaternion(const HAL_Quaternion* quat) {
+  if (!quat) {
+    return;
+  }
+  std::scoped_lock lock{SimIMUData->quaternionMutex};
+  SimIMUData->quaternion = *quat;
+}
 #define DEFINE_CAPI(TYPE, CAPINAME, LOWERNAME)                      \
   HAL_SIMDATAVALUE_DEFINE_CAPI_NOINDEX(TYPE, HALSIM, IMU##CAPINAME, \
                                        SimIMUData, LOWERNAME)

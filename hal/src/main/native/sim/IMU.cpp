@@ -8,10 +8,17 @@
 
 using namespace wpi::hal;
 
+namespace {
+int64_t SampleTimestamp() {
+  std::scoped_lock lock{SimIMUData->quaternionMutex};
+  return SimIMUData->quaternion.timestamp;
+}
+}  // namespace
+
 extern "C" {
 void HAL_GetIMUAcceleration(HAL_Acceleration3d* accel, int32_t* status) {
   *accel = {
-      .timestamp = 0,
+      .timestamp = SampleTimestamp(),
       .x = SimIMUData->accelX,
       .y = SimIMUData->accelY,
       .z = SimIMUData->accelZ,
@@ -19,7 +26,7 @@ void HAL_GetIMUAcceleration(HAL_Acceleration3d* accel, int32_t* status) {
 }
 void HAL_GetIMUGyroRates(HAL_GyroRate3d* rate, int32_t* status) {
   *rate = {
-      .timestamp = 0,
+      .timestamp = SampleTimestamp(),
       .x = SimIMUData->gyroRateX,
       .y = SimIMUData->gyroRateY,
       .z = SimIMUData->gyroRateZ,
@@ -27,7 +34,7 @@ void HAL_GetIMUGyroRates(HAL_GyroRate3d* rate, int32_t* status) {
 }
 void HAL_GetIMUEulerAnglesFlat(HAL_EulerAngles3d* angles, int32_t* status) {
   *angles = {
-      .timestamp = 0,
+      .timestamp = SampleTimestamp(),
       .x = SimIMUData->angleX,
       .y = SimIMUData->angleY,
       .z = SimIMUData->angleZ,
@@ -36,7 +43,7 @@ void HAL_GetIMUEulerAnglesFlat(HAL_EulerAngles3d* angles, int32_t* status) {
 void HAL_GetIMUEulerAnglesLandscape(HAL_EulerAngles3d* angles,
                                     int32_t* status) {
   *angles = {
-      .timestamp = 0,
+      .timestamp = SampleTimestamp(),
       .x = SimIMUData->angleX,
       .y = SimIMUData->angleY,
       .z = SimIMUData->angleZ,
@@ -44,22 +51,33 @@ void HAL_GetIMUEulerAnglesLandscape(HAL_EulerAngles3d* angles,
 }
 void HAL_GetIMUEulerAnglesPortrait(HAL_EulerAngles3d* angles, int32_t* status) {
   *angles = {
-      .timestamp = 0,
+      .timestamp = SampleTimestamp(),
       .x = SimIMUData->angleX,
       .y = SimIMUData->angleY,
       .z = SimIMUData->angleZ,
   };
 }
 void HAL_GetIMUQuaternion(HAL_Quaternion* quat, int32_t* status) {
-  *quat = {};
+  std::scoped_lock lock{SimIMUData->quaternionMutex};
+  *quat = SimIMUData->quaternion;
+  *status = 0;
 }
 double HAL_GetIMUYawFlat(int64_t* timestamp) {
+  if (timestamp) {
+    *timestamp = SampleTimestamp();
+  }
   return SimIMUData->yaw;
 }
 double HAL_GetIMUYawLandscape(int64_t* timestamp) {
+  if (timestamp) {
+    *timestamp = SampleTimestamp();
+  }
   return SimIMUData->yaw;
 }
 double HAL_GetIMUYawPortrait(int64_t* timestamp) {
+  if (timestamp) {
+    *timestamp = SampleTimestamp();
+  }
   return SimIMUData->yaw;
 }
 }  // extern "C"

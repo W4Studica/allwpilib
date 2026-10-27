@@ -7,7 +7,7 @@
 #include <chrono>
 #include <cstdint>
 
-#include "wpi/studica/HardwareBackend.hpp"
+#include "wpi/studica/detail/HardwareBackend.hpp"
 
 namespace wpi::studica {
 
@@ -17,6 +17,12 @@ struct ImuReading {
   double gyroX, gyroY, gyroZ;
   double accelX, accelY, accelZ;
 };
+
+struct QuaternionReading {
+  double w = 1, x = 0, y = 0, z = 0;
+};
+QuaternionReading ImuQuaternion(const ImuReading& reading);
+DutyCycleReading ConvertDutyCycle(uint32_t periodMicros, uint32_t highMicros);
 
 ImuReading ConvertImu(const ImuSample& sample);
 int PwmPeriodMicros(int periodCode);
@@ -28,7 +34,8 @@ struct EncoderReading {
   bool directionChanged;
 };
 
-/// Provides reset, direction and distance-per-pulse semantics over raw driver counts.
+/// Provides reset, direction and distance-per-pulse semantics over raw driver
+/// counts.
 class EncoderState {
  public:
   void Initialize(int32_t raw);
