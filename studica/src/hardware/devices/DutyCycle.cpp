@@ -34,7 +34,7 @@ void StudicaBackend::ReleaseDutyCycle(int channel) {
 
 bool StudicaBackend::GetDutyCycle(int channel, DutyCycleReading* reading) {
   auto it = m_dutyCycles.find(channel);
-  if (it == m_dutyCycles.end()) {
+  if (!reading || it == m_dutyCycles.end()) {
     return false;
   }
   uint32_t period = 0, high = 0;

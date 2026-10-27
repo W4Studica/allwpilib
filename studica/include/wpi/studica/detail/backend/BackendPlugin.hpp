@@ -48,6 +48,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   // Captureless lambdas convert to the C function pointers.
   api->initDigital = [](void* c, int ch, int in) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->InitDigital(ch, in != 0);
     } catch (...) {
       ReportBackendException("initDigital");
@@ -56,6 +58,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->releaseDigital = [](void* c, int ch) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->ReleaseDigital(ch);
     } catch (...) {
       ReportBackendException("releaseDigital");
@@ -63,6 +67,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->setDigital = [](void* c, int ch, int v) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->SetDigital(ch, v != 0);
     } catch (...) {
       ReportBackendException("setDigital");
@@ -70,6 +76,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->getDigital = [](void* c, int ch) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->GetDigital(ch) ? 1 : 0;
     } catch (...) {
       ReportBackendException("getDigital");
@@ -78,6 +86,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->initAnalog = [](void* c, int ch) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->InitAnalog(ch);
     } catch (...) {
       ReportBackendException("initAnalog");
@@ -86,6 +96,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->releaseAnalog = [](void* c, int ch) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->ReleaseAnalog(ch);
     } catch (...) {
       ReportBackendException("releaseAnalog");
@@ -93,6 +105,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->getAnalogVoltage = [](void* c, int ch, double* volts) -> int {
     try {
+      if (!c || !volts)
+        return 0;
       return static_cast<HardwareBackend*>(c)->GetAnalogVoltage(ch, volts);
     } catch (...) {
       ReportBackendException("getAnalogVoltage");
@@ -101,6 +115,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->initEncoder = [](void* c, int a, int b) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->InitEncoder(a, b);
     } catch (...) {
       ReportBackendException("initEncoder");
@@ -109,6 +125,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->releaseEncoder = [](void* c, int a) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->ReleaseEncoder(a);
     } catch (...) {
       ReportBackendException("releaseEncoder");
@@ -116,6 +134,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->getEncoderCount = [](void* c, int a, int32_t* count) -> int {
     try {
+      if (!c || !count)
+        return 0;
       return static_cast<HardwareBackend*>(c)->GetEncoderCount(a, count);
     } catch (...) {
       ReportBackendException("getEncoderCount");
@@ -124,6 +144,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->initImu = [](void* c) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->InitImu();
     } catch (...) {
       ReportBackendException("initImu");
@@ -132,6 +154,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->releaseImu = [](void* c) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->ReleaseImu();
     } catch (...) {
       ReportBackendException("releaseImu");
@@ -139,6 +163,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->getImu = [](void* c, wpilibstudica_ImuSample* out) -> int {
     try {
+      if (!c || !out)
+        return 0;
       ImuSample s;
       if (!static_cast<HardwareBackend*>(c)->GetImu(&s)) {
         return 0;
@@ -160,6 +186,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->initPwm = [](void* c, int ch, int period) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->InitPwm(ch, period);
     } catch (...) {
       ReportBackendException("initPwm");
@@ -168,6 +196,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->releasePwm = [](void* c, int ch) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->ReleasePwm(ch);
     } catch (...) {
       ReportBackendException("releasePwm");
@@ -175,6 +205,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->setPwmPulse = [](void* c, int ch, int pulse) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->SetPwmPulse(ch, pulse);
     } catch (...) {
       ReportBackendException("setPwmPulse");
@@ -182,6 +214,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->initI2c = [](void* c) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->InitI2c();
     } catch (...) {
       ReportBackendException("initI2c");
@@ -190,6 +224,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->releaseI2c = [](void* c) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->ReleaseI2c();
     } catch (...) {
       ReportBackendException("releaseI2c");
@@ -198,6 +234,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   api->transactionI2c = [](void* c, int address, const uint8_t* tx, int txSize,
                            uint8_t* rx, int rxSize) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->TransactionI2c(
           address, tx, txSize, rx, rxSize);
     } catch (...) {
@@ -207,6 +245,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->initDutyCycle = [](void* c, int ch) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->InitDutyCycle(ch);
     } catch (...) {
       ReportBackendException("initDutyCycle");
@@ -215,6 +255,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->releaseDutyCycle = [](void* c, int ch) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->ReleaseDutyCycle(ch);
     } catch (...) {
       ReportBackendException("releaseDutyCycle");
@@ -223,6 +265,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   api->getDutyCycle = [](void* c, int ch, double* frequency,
                          double* output) -> int {
     try {
+      if (!c || !frequency || !output)
+        return 0;
       DutyCycleReading reading;
       if (!static_cast<HardwareBackend*>(c)->GetDutyCycle(ch, &reading)) {
         return 0;
@@ -237,6 +281,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->initInterrupt = [](void* c, int ch) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->InitInterrupt(ch);
     } catch (...) {
       ReportBackendException("initInterrupt");
@@ -245,6 +291,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->releaseInterrupt = [](void* c, int ch) {
     try {
+      if (!c)
+        return;
       static_cast<HardwareBackend*>(c)->ReleaseInterrupt(ch);
     } catch (...) {
       ReportBackendException("releaseInterrupt");
@@ -253,6 +301,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   api->readInterrupt = [](void* c, int ch, int* rising, uint64_t* timestamp,
                           uint32_t* dropped) -> int {
     try {
+      if (!c || !rising || !timestamp || !dropped)
+        return 0;
       InterruptEvent event;
       if (!static_cast<HardwareBackend*>(c)->ReadInterrupt(ch, &event)) {
         return 0;
@@ -268,6 +318,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->getBatteryVoltage = [](void* c, double* volts) -> int {
     try {
+      if (!c || !volts)
+        return 0;
       return static_cast<HardwareBackend*>(c)->GetBatteryVoltage(volts);
     } catch (...) {
       ReportBackendException("getBatteryVoltage");
@@ -276,8 +328,10 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->tryGetDigital = [](void* c, int ch, int* out) -> int {
     try {
+      if (!c || !out)
+        return 0;
       bool value = false;
-      if (!out || !static_cast<HardwareBackend*>(c)->TryGetDigital(ch, &value))
+      if (!static_cast<HardwareBackend*>(c)->TryGetDigital(ch, &value))
         return 0;
       *out = value;
       return 1;
@@ -288,6 +342,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->trySetDigital = [](void* c, int ch, int value) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->TrySetDigital(ch, value != 0);
     } catch (...) {
       ReportBackendException("trySetDigital");
@@ -296,6 +352,8 @@ inline wpilibstudica_BackendApi* MakeBackendApi(
   };
   api->trySetPwmPulse = [](void* c, int ch, int pulse) -> int {
     try {
+      if (!c)
+        return 0;
       return static_cast<HardwareBackend*>(c)->TrySetPwmPulse(ch, pulse);
     } catch (...) {
       ReportBackendException("trySetPwmPulse");

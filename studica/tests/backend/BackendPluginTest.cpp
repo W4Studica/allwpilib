@@ -37,3 +37,24 @@ TEST_CASE("Backend exceptions cannot become valid digital readings",
   REQUIRE(api->tryGetDigital(api->ctx, 2, &value) == 0);
   REQUIRE(value == 123);
 }
+
+TEST_CASE("Plugin ABI rejects null output pointers and context",
+          "[studica][plugin]") {
+  std::unique_ptr<wpilibstudica_BackendApi, decltype(&DestroyBackendApi)> api{
+      MakeBackendApi(std::make_unique<LoopbackBackend>()), DestroyBackendApi};
+  REQUIRE(api->initAnalog(api->ctx, 22));
+  REQUIRE(api->initEncoder(api->ctx, 0, 1));
+  REQUIRE(api->initDutyCycle(api->ctx, 2));
+  REQUIRE(api->initImu(api->ctx));
+  CHECK(api->getAnalogVoltage(api->ctx, 22, nullptr) == 0);
+  CHECK(api->getEncoderCount(api->ctx, 0, nullptr) == 0);
+  CHECK(api->getImu(api->ctx, nullptr) == 0);
+  double output = 99;
+  CHECK(api->getDutyCycle(api->ctx, 2, nullptr, &output) == 0);
+  CHECK(api->getDutyCycle(api->ctx, 2, &output, nullptr) == 0);
+  CHECK(output == 99);
+  CHECK(api->getBatteryVoltage(api->ctx, nullptr) == 0);
+  CHECK(api->readInterrupt(api->ctx, 2, nullptr, nullptr, nullptr) == 0);
+  CHECK(api->tryGetDigital(nullptr, 2, nullptr) == 0);
+  CHECK(api->initDigital(nullptr, 2, 1) == 0);
+}

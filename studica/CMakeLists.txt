@@ -19,23 +19,25 @@ install(TARGETS studica EXPORT studica)
 export(TARGETS studica FILE studica.cmake NAMESPACE studica::)
 install(DIRECTORY include/ DESTINATION "${include_dest}")
 
+# The same hardware implementation is exercised against a test SDK on the host.
+set(studica_hardware_sources
+    src/conversion/DeviceConversions.cpp
+    src/hardware/StudicaBackend.cpp
+    src/hardware/SharedVMX.cpp
+    src/hardware/RtcClock.cpp
+    src/hardware/devices/Digital.cpp
+    src/hardware/devices/Analog.cpp
+    src/hardware/devices/Encoder.cpp
+    src/hardware/devices/Imu.cpp
+    src/hardware/devices/Pwm.cpp
+    src/hardware/devices/I2c.cpp
+    src/hardware/devices/DutyCycle.cpp
+    src/hardware/devices/Interrupt.cpp
+)
+
 if(WPILIB_WITH_STUDICA)
     add_subdirectory(drivers)
-    add_library(studica_hardware SHARED
-        src/conversion/DeviceConversions.cpp
-        src/hardware/StudicaBackend.cpp
-        src/hardware/SharedVMX.cpp
-        src/hardware/RtcClock.cpp
-        src/hardware/devices/Digital.cpp
-        src/hardware/devices/Analog.cpp
-        src/hardware/devices/Encoder.cpp
-        src/hardware/devices/Imu.cpp
-        src/hardware/devices/Pwm.cpp
-        src/hardware/devices/I2c.cpp
-        src/hardware/devices/DutyCycle.cpp
-        src/hardware/devices/Interrupt.cpp
-        src/titan/Titan.cpp
-    )
+    add_library(studica_hardware SHARED ${studica_hardware_sources} src/titan/Titan.cpp)
     target_compile_features(studica_hardware PRIVATE cxx_std_20)
     target_include_directories(studica_hardware PUBLIC include PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../hal/src/main/native/include"
@@ -47,6 +49,22 @@ if(WPILIB_WITH_STUDICA)
 endif()
 
 if(WPILIB_WITH_TESTS)
+    set(STUDICA_TEST_SANITIZERS "" CACHE STRING "Sanitizers for Studica hardware tests (address,undefined or thread)")
+    wpilib_add_test(studica_hardware
+        tests/main.cpp
+        tests/hardware/HardwareBackendTest.cpp
+        tests/hardware/ControlConcurrencyTest.cpp
+        ${studica_hardware_sources}
+    )
+    target_compile_features(studica_hardware_test PRIVATE cxx_std_20)
+    target_include_directories(studica_hardware_test BEFORE PRIVATE tests/hardware/fake_sdk)
+    target_include_directories(studica_hardware_test PRIVATE include src/hardware)
+    target_link_libraries(studica_hardware_test hal Threads::Threads)
+    if(STUDICA_TEST_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(studica_hardware_test PRIVATE
+            -fsanitize=${STUDICA_TEST_SANITIZERS} -fno-omit-frame-pointer)
+        target_link_options(studica_hardware_test PRIVATE -fsanitize=${STUDICA_TEST_SANITIZERS})
+    endif()
     foreach(variant good bad_abi incomplete)
         add_library(studica_test_plugin_${variant} SHARED
             tests/plugin/LoopbackPlugin.cpp

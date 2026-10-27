@@ -27,7 +27,7 @@ class InterruptQueue {
   }
   bool Pop(InterruptEvent* event) {
     std::scoped_lock lock{m_mutex};
-    if (!m_size) {
+    if (!event || !m_size) {
       return false;
     }
     *event = m_events[m_head];

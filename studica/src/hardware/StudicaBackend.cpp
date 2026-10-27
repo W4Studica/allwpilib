@@ -47,7 +47,7 @@ bool StudicaBackend::ChannelCan(int vmxChannel,
 }
 
 bool StudicaBackend::GetBatteryVoltage(double* volts) {
-  if (!m_vmx || !m_vmx->IsOpen()) {
+  if (!volts || !m_vmx || !m_vmx->IsOpen()) {
     return false;
   }
   float v = 0.0f;

@@ -15,6 +15,19 @@ using detail::InterruptQueue;
 std::mutex gInterruptMutex;
 std::map<uintptr_t, std::shared_ptr<InterruptQueue>> gInterruptQueues;
 uintptr_t gNextInterruptToken = 1;
+
+// Rolls back the registry entry even if the SDK throws before owning a
+// resource.
+struct PendingInterrupt {
+  uintptr_t token;
+  ~PendingInterrupt() {
+    if (token) {
+      std::scoped_lock lock{gInterruptMutex};
+      gInterruptQueues.erase(token);
+    }
+  }
+};
+
 void OnInterrupt(uint32_t, InterruptEdgeType edge, void* param,
                  uint64_t timestamp) {
   std::shared_ptr<InterruptQueue> queue;
@@ -45,6 +58,7 @@ bool StudicaBackend::InitInterrupt(int channel) {
     interrupt.token = gNextInterruptToken++;
     gInterruptQueues.emplace(interrupt.token, interrupt.queue);
   }
+  PendingInterrupt pending{interrupt.token};
   InterruptConfig config(InterruptConfig::BOTH, OnInterrupt,
                          reinterpret_cast<void*>(interrupt.token));
   VMXErrorCode err = 0;
@@ -52,8 +66,6 @@ bool StudicaBackend::InitInterrupt(int channel) {
   if (!m_vmx->io.ActivateSinglechannelResource(
           VMXChannelInfo(channel, VMXChannelCapability::InterruptInput),
           &config, handle, &err)) {
-    std::scoped_lock lock{gInterruptMutex};
-    gInterruptQueues.erase(interrupt.token);
     return false;
   }
   interrupt.resource = detail::VMXResource{
@@ -68,6 +80,7 @@ bool StudicaBackend::InitInterrupt(int channel) {
                     vmx.io.Interrupt_SetEnabled(resource, false, &error);
                   },
                   interrupt.token}};
+  pending.token = 0;  // The SDK resource now owns registry cleanup.
   m_interrupts.emplace(channel, std::move(interrupt));
   return true;
 }

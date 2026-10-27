@@ -19,7 +19,7 @@ void StudicaBackend::ReleaseImu() {
 }
 
 bool StudicaBackend::GetImu(ImuSample* sample) {
-  if (!m_imu || !m_imu->IsConnected() || m_imu->IsCalibrating()) {
+  if (!sample || !m_imu || !m_imu->IsConnected() || m_imu->IsCalibrating()) {
     return false;
   }
   sample->yawDeg = m_imu->GetYaw();
