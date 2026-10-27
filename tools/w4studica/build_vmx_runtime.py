@@ -15,8 +15,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True, help='Output vmx folder (include/, linuxarm64/, licenses/)')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
-    extension = root / 'simulation/halsim_vmx'
-    drivers = root / 'studica_drivers'
+    extension = root / 'simulation/halsim_studica'
+    drivers = root / 'studica/drivers'
     sdk_headers = args.sdk / 'usr/local/include/vmxpi'
     sdk_libs = args.sdk / 'usr/local/lib/vmxpi'
     if not (sdk_headers / 'VMXPi.h').is_file() or not (sdk_libs / 'libvmxpi_hal_cpp.so').is_file():
@@ -29,33 +29,30 @@ def main():
         staging = Path(temporary)
         library = staging / 'linuxarm64'
         library.mkdir()
-        common = [str(args.compiler), '-std=c++20', '-O2', '-fPIC', '-shared', '-pthread', '-Wl,--no-undefined',
-                  '-I' + str(sdk_headers), '-I' + str(drivers), '-L' + str(sdk_libs),
-                  '-Wl,-rpath,/usr/local/lib/vmxpi', '-Wl,-rpath,$ORIGIN']
-
-        def compile_library(name, sources, flags):
-            print('Building ' + name, flush=True)
-            subprocess.run(common + [str(source) for source in sources] + flags + ['-Wl,-soname,' + name, '-o', str(library / name)], check=True)
-
-        compile_library('libstudica_drivers.so', sorted(drivers.glob('*.cpp')), ['-lvmxpi_hal_cpp', '-latomic', '-lrt'])
-        compile_library('libhalsim_vmx_studica.so', sorted((extension / 'src/studica/native/cpp').glob('*.cpp')),
-                        ['-I' + str(extension / 'src/main/native/include'), '-I' + str(extension / 'src/studica/native/include'),
-                         '-L' + str(library), '-lstudica_drivers', '-lvmxpi_hal_cpp'])
-        compile_library('libhalsim_vmx.so', sorted((extension / 'src/main/native/cpp').glob('*.cpp')),
-                        ['-I' + str(extension / 'src/main/native/include'), '-I' + str(root / 'hal/src/main/native/include'),
-                         '-I' + str(root / 'wpiutil/src/main/native/include'), '-L' + str(args.wpilib_libs),
-                         '-Wl,-rpath-link,' + str(args.wpilib_libs), '-lwpiHal', '-lwpiutil', '-ldl'])
-        # Debug WPILib has distinct SONAMEs. Reusing the release extension would
-        # load a second HAL and disconnect the hardware from the robot's HAL state.
-        compile_library('libhalsim_vmxd.so', sorted((extension / 'src/main/native/cpp').glob('*.cpp')),
-                        ['-O0', '-g', '-I' + str(extension / 'src/main/native/include'), '-I' + str(root / 'hal/src/main/native/include'),
-                         '-I' + str(root / 'wpiutil/src/main/native/include'), '-L' + str(args.wpilib_libs),
-                         '-Wl,-rpath-link,' + str(args.wpilib_libs), '-lwpiHald', '-lwpiutild', '-ldl'])
+        for build_type in ['Release', 'Debug']:
+            build = staging / ('build-' + build_type.lower())
+            subprocess.run([
+                'cmake', '-S', str(Path(__file__).resolve().parent), '-B', str(build),
+                '-DCMAKE_CXX_COMPILER=' + str(args.compiler.resolve()),
+                '-DCMAKE_SYSTEM_NAME=Linux', '-DCMAKE_SYSTEM_PROCESSOR=aarch64',
+                '-DCMAKE_BUILD_TYPE=' + build_type,
+                '-DVMXPI_INCLUDE_DIR=' + str(sdk_headers.resolve()),
+                '-DVMXPI_HAL_CPP_LIBRARY=' + str((sdk_libs / 'libvmxpi_hal_cpp.so').resolve()),
+                '-DWPILIB_LIBS=' + str(args.wpilib_libs.resolve()),
+                '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + str(library.resolve()) if build_type == 'Release'
+                else '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + str((build / 'lib').resolve()),
+            ], check=True)
+            targets = ['halsim_studica', 'studica_hardware'] if build_type == 'Release' else ['halsim_studica']
+            subprocess.run(['cmake', '--build', str(build), '--parallel', '4', '--target', *targets], check=True)
+            if build_type == 'Debug':
+                shutil.copy2(build / 'lib/libhalsim_studicad.so', library)
+        for build_type in ['release', 'debug']:
+            shutil.rmtree(staging / ('build-' + build_type))
         headers = staging / 'include'
         headers.mkdir()
         for source in drivers.glob('*.hpp'):
             shutil.copy2(source, headers / source.name)
-        for source in [extension / 'src/main/native/include', extension / 'src/studica/native/include']:
+        for source in [extension / 'src/main/native/include', root / 'studica/include']:
             shutil.copytree(source, headers, dirs_exist_ok=True)
         notices = staging / 'licenses'
         notices.mkdir()

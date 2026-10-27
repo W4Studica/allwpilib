@@ -360,8 +360,8 @@ if(WPILIB_WITH_BENCHMARK)
     add_subdirectory(benchmark)
 endif()
 
-if(WPILIB_WITH_STUDICA)
-    add_subdirectory(studica_drivers)
+if(WPILIB_WITH_STUDICA OR WPILIB_WITH_SIMULATION_MODULES)
+    add_subdirectory(studica)
 endif()
 
 if(WPILIB_WITH_SIMULATION_MODULES)

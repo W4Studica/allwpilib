@@ -1,0 +1,79 @@
+// Copyright (c) FIRST and other WPILib contributors.
+// Open Source Software; you can modify and/or share it under the terms of
+// the WPILib BSD license file in the root directory of this project.
+
+#pragma once
+
+#include <cstdint>
+#include <memory>
+
+namespace wpi::studica {
+
+/**
+ * Hardware access used by halsim_studica. The real implementation wraps the
+ * Studica drivers (studica_driver::*) and only exists on a VMX-pi; the host
+ * implementation is a loopback so the extension can be built and tested on a
+ * PC.
+ *
+ * All channel numbers here are VMX channel indexes, not WPILib channel numbers.
+ */
+/// One IMU reading in the sensor's native units (navX: degrees, deg/s, g).
+struct ImuSample {
+  double yawDeg = 0;
+  double pitchDeg = 0;
+  double rollDeg = 0;
+  double gyroXDps = 0;
+  double gyroYDps = 0;
+  double gyroZDps = 0;
+  double accelXG = 0;
+  double accelYG = 0;
+  double accelZG = 0;
+};
+
+class HardwareBackend {
+ public:
+  virtual ~HardwareBackend() = default;
+
+  /// Claims a digital channel. Returns false if the channel could not be set up.
+  virtual bool InitDigital(int vmxChannel, bool isInput) = 0;
+  virtual void ReleaseDigital(int vmxChannel) = 0;
+  virtual void SetDigital(int vmxChannel, bool value) = 0;
+  virtual bool GetDigital(int vmxChannel) = 0;
+
+  /// Claims an analog input channel. Returns false if it could not be set up.
+  virtual bool InitAnalog(int vmxChannel) = 0;
+  virtual void ReleaseAnalog(int vmxChannel) = 0;
+  /// Reads the averaged voltage. Returns false if no valid reading is available.
+  virtual bool GetAnalogVoltage(int vmxChannel, double* volts) = 0;
+
+  /// Claims a quadrature encoder on two channels. Identified by channel A.
+  virtual bool InitEncoder(int vmxChannelA, int vmxChannelB) = 0;
+  virtual void ReleaseEncoder(int vmxChannelA) = 0;
+  /// Reads the raw tick count since the encoder was claimed.
+  virtual bool GetEncoderCount(int vmxChannelA, int32_t* count) = 0;
+
+  /// Claims the IMU (navX). There is only one.
+  virtual bool InitImu() = 0;
+  virtual void ReleaseImu() = 0;
+  /// Reads the IMU. Returns false while it is disconnected or calibrating.
+  virtual bool GetImu(ImuSample* sample) = 0;
+
+  /// Starts a PWM output with the given frame length (microseconds). Identified by VMX channel.
+  virtual bool InitPwm(int vmxChannel, int periodMicros) = 0;
+  /// Stops the output (line low) and frees the channel.
+  virtual void ReleasePwm(int vmxChannel) = 0;
+  /// Sets the high time of each frame. 0 disables the output (line low).
+  virtual void SetPwmPulse(int vmxChannel, int pulseMicros) = 0;
+
+  /// Reads the battery (system) voltage. Returns false if no valid reading is available.
+  virtual bool GetBatteryVoltage(double* volts) = 0;
+};
+
+/**
+ * Creates the backend named by HALSIMSTUDICA_BACKEND (path of a backend plugin, see
+ * BackendApi.h). If it is unset, the in-memory loopback backend is used. Returns
+ * nullptr if a backend was named but could not be loaded.
+ */
+std::unique_ptr<HardwareBackend> CreateBackend();
+
+}  // namespace wpi::studica
