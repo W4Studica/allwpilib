@@ -9,8 +9,8 @@
 
 #include <memory>
 
-#include "wpi/studica/detail/BackendPlugin.hpp"
-#include "wpi/studica/detail/LoopbackBackend.hpp"
+#include "wpi/studica/detail/backend/BackendPlugin.hpp"
+#include "wpi/studica/detail/backend/LoopbackBackend.hpp"
 
 extern "C" {
 

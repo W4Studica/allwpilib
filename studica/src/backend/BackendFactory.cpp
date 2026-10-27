@@ -6,9 +6,9 @@
 #include <cstdlib>
 #include <string>
 
-#include "wpi/studica/detail/DlBackend.hpp"
-#include "wpi/studica/detail/HardwareBackend.hpp"
-#include "wpi/studica/detail/LoopbackBackend.hpp"
+#include "wpi/studica/detail/backend/DlBackend.hpp"
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
+#include "wpi/studica/detail/backend/LoopbackBackend.hpp"
 
 namespace wpi::studica {
 

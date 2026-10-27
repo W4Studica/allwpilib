@@ -10,8 +10,8 @@
 #include "wpi/hal/Extensions.h"
 #include "wpi/halsim/studica/ChannelMap.hpp"
 #include "wpi/halsim/studica/HALSimStudica.hpp"
-#include "wpi/studica/detail/HardwareBackend.hpp"
-#include "wpi/studica/detail/TerminationHandlers.hpp"
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
+#include "wpi/studica/detail/runtime/TerminationHandlers.hpp"
 
 using namespace wpi::studica;
 

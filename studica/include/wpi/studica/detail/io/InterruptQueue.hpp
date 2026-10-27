@@ -8,7 +8,7 @@
 #include <limits>
 #include <mutex>
 
-#include "wpi/studica/detail/HardwareBackend.hpp"
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
 
 namespace wpi::studica::detail {
 /// Bounded queue: SDK callbacks do not allocate or invoke application code.

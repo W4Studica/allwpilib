@@ -22,7 +22,7 @@
 #include "wpi/hal/simulation/DutyCycleData.h"
 #include "wpi/hal/simulation/I2CData.h"
 #include "wpi/halsim/studica/HALSimStudica.hpp"
-#include "wpi/studica/detail/LoopbackBackend.hpp"
+#include "wpi/studica/detail/backend/LoopbackBackend.hpp"
 
 using namespace wpi::studica;
 namespace {

@@ -8,8 +8,8 @@
 #include <map>
 #include <mutex>
 
-#include "wpi/studica/detail/HardwareBackend.hpp"
-#include "wpi/studica/detail/InterruptQueue.hpp"
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
+#include "wpi/studica/detail/io/InterruptQueue.hpp"
 
 namespace wpi::studica {
 

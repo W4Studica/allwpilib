@@ -2,7 +2,7 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
-#include "wpi/studica/detail/TitanEnableGuard.hpp"
+#include "wpi/studica/detail/titan/TitanEnableGuard.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -13,7 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "wpi/hal/simulation/DriverStationData.h"
-#include "wpi/studica/detail/ControlLoopWatchdog.hpp"
+#include "wpi/studica/detail/titan/ControlLoopWatchdog.hpp"
 
 using wpi::studica::detail::TitanEnableGuard;
 

@@ -19,7 +19,7 @@
 #include "wpi/hal/simulation/IMUData.h"
 #include "wpi/hal/simulation/PWMData.h"
 #include "wpi/hal/simulation/RoboRioData.h"
-#include "wpi/studica/detail/TerminationHandlers.hpp"
+#include "wpi/studica/detail/runtime/TerminationHandlers.hpp"
 
 using namespace wpi::studica;
 

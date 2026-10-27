@@ -7,7 +7,7 @@
 #include <chrono>
 #include <cstdint>
 
-#include "wpi/studica/detail/HardwareBackend.hpp"
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
 
 namespace wpi::studica {
 

@@ -9,8 +9,8 @@
 #include <functional>
 #include <utility>
 
-#include "wpi/studica/detail/ControlLoopWatchdog.hpp"
-#include "wpi/studica/detail/TitanEnableGuard.hpp"
+#include "wpi/studica/detail/titan/ControlLoopWatchdog.hpp"
+#include "wpi/studica/detail/titan/TitanEnableGuard.hpp"
 
 namespace wpi::studica::detail {
 /// Owns the enable policy; the SDK transport is injected so the real policy can

@@ -2,7 +2,7 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
-#include "wpi/studica/detail/DlBackend.hpp"
+#include "wpi/studica/detail/backend/DlBackend.hpp"
 
 #include <cstdint>
 #include <cstdlib>
@@ -10,7 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "wpi/studica/detail/HardwareBackend.hpp"
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
 
 using namespace wpi::studica;
 

@@ -7,8 +7,8 @@
 #include <memory>
 #include <utility>
 
-#include "wpi/studica/detail/BackendApi.h"
-#include "wpi/studica/detail/HardwareBackend.hpp"
+#include "wpi/studica/detail/backend/BackendApi.h"
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
 
 /// Visibility for the two exported plugin functions.
 #if defined(_WIN32)

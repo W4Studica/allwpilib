@@ -2,7 +2,7 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
-#include "wpi/studica/detail/TerminationHandlers.hpp"
+#include "wpi/studica/detail/runtime/TerminationHandlers.hpp"
 
 #if !defined(_WIN32)
 

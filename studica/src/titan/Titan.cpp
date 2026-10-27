@@ -9,9 +9,9 @@
 #include <stdexcept>
 #include <utility>
 
-#include "detail/TitanEnableSwitch.hpp"
+#include "TitanEnableSwitch.hpp"
 #include "wpi/studica/SharedVMX.hpp"
-#include "wpi/studica/detail/TitanControl.hpp"
+#include "wpi/studica/detail/titan/TitanControl.hpp"
 #include "wpi/studica/drivers/Titan.hpp"
 
 namespace wpi::studica {

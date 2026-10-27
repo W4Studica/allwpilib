@@ -4,11 +4,11 @@ include(CompileWarnings)
 find_package(Threads REQUIRED)
 
 add_library(studica SHARED
-    src/BackendFactory.cpp
-    src/DeviceConversions.cpp
-    src/DlBackend.cpp
-    src/LoopbackBackend.cpp
-    src/TerminationHandlers.cpp
+    src/backend/BackendFactory.cpp
+    src/backend/DlBackend.cpp
+    src/backend/LoopbackBackend.cpp
+    src/conversion/DeviceConversions.cpp
+    src/runtime/TerminationHandlers.cpp
 )
 wpilib_target_warnings(studica)
 target_compile_features(studica PUBLIC cxx_std_20)
@@ -21,7 +21,11 @@ install(DIRECTORY include/ DESTINATION "${include_dest}")
 
 if(WPILIB_WITH_STUDICA)
     add_subdirectory(drivers)
-    add_library(studica_hardware SHARED src/StudicaBackend.cpp src/DeviceConversions.cpp src/Titan.cpp)
+    add_library(studica_hardware SHARED
+        src/conversion/DeviceConversions.cpp
+        src/hardware/StudicaBackend.cpp
+        src/titan/Titan.cpp
+    )
     target_compile_features(studica_hardware PRIVATE cxx_std_20)
     target_include_directories(studica_hardware PUBLIC include PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../hal/src/main/native/include"
@@ -36,13 +40,18 @@ if(WPILIB_WITH_TESTS)
     foreach(variant good bad_abi)
         add_library(studica_test_plugin_${variant} SHARED
             tests/plugin/LoopbackPlugin.cpp
-            src/LoopbackBackend.cpp
+            src/backend/LoopbackBackend.cpp
         )
         target_compile_features(studica_test_plugin_${variant} PRIVATE cxx_std_20)
         target_include_directories(studica_test_plugin_${variant} PRIVATE include)
         set_property(TARGET studica_test_plugin_${variant} PROPERTY FOLDER "tests")
     endforeach()
     target_compile_definitions(studica_test_plugin_bad_abi PRIVATE HALSIMSTUDICA_TEST_BAD_ABI)
-    wpilib_add_test(studica tests/main.cpp tests/TitanEnableGuardTest.cpp tests/TitanControlTest.cpp tests/TerminationHandlersTest.cpp)
+    wpilib_add_test(studica
+        tests/main.cpp
+        tests/runtime/TerminationHandlersTest.cpp
+        tests/titan/TitanControlTest.cpp
+        tests/titan/TitanEnableGuardTest.cpp
+    )
     target_link_libraries(studica_test studica hal)
 endif()

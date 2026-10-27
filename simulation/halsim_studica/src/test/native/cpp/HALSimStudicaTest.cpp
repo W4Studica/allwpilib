@@ -21,7 +21,7 @@
 #include "wpi/hal/simulation/EncoderData.h"
 #include "wpi/hal/simulation/PWMData.h"
 #include "wpi/hal/simulation/RoboRioData.h"
-#include "wpi/studica/detail/LoopbackBackend.hpp"
+#include "wpi/studica/detail/backend/LoopbackBackend.hpp"
 
 using namespace wpi::studica;
 

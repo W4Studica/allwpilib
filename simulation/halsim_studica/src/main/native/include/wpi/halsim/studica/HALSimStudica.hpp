@@ -15,8 +15,8 @@
 
 #include "wpi/hal/simulation/NotifyListener.h"
 #include "wpi/halsim/studica/ChannelMap.hpp"
-#include "wpi/studica/detail/DeviceConversions.hpp"
-#include "wpi/studica/detail/HardwareBackend.hpp"
+#include "wpi/studica/detail/conversion/DeviceConversions.hpp"
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
 
 namespace wpi::studica {
 

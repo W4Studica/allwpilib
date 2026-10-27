@@ -3,9 +3,9 @@ project(halsim_studica)
 include(CompileWarnings)
 
 add_library(halsim_studica SHARED
-    src/main/native/cpp/I2C.cpp
-    src/main/native/cpp/DutyCycle.cpp
-    src/main/native/cpp/DigitalEdges.cpp
+    src/main/native/cpp/devices/I2C.cpp
+    src/main/native/cpp/devices/DutyCycle.cpp
+    src/main/native/cpp/devices/DigitalEdges.cpp
     src/main/native/cpp/ChannelMap.cpp
     src/main/native/cpp/HALSimStudica.cpp
     src/main/native/cpp/main.cpp
