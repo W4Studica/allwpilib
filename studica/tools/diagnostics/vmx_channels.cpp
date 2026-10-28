@@ -1,5 +1,4 @@
 // Prints the VMX channel map the HAL reports: channel indexes by type and what each channel can do.
-// Use it to choose the VMX channel numbers for HALSIMSTUDICA_DIO_MAP / HALSIMSTUDICA_ANALOG_MAP instead of guessing.
 //
 //   g++ -std=c++17 vmx_channels.cpp -o vmx_channels -I/usr/local/include/vmxpi -L/usr/local/lib/vmxpi -lvmxpi_hal_cpp -lrt -lpthread -latomic
 //   sudo ./vmx_channels

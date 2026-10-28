@@ -125,11 +125,11 @@ class HardwareBackend {
   virtual bool GetBatteryVoltage(double* volts) = 0;
 };
 
-/**
- * Creates the backend named by HALSIMSTUDICA_BACKEND (path of a backend plugin,
- * see BackendApi.h). If it is unset, the in-memory loopback backend is used.
- * Returns nullptr if a backend was named but could not be loaded.
- */
+/// True only for the VMX hardware runtime build.
+bool IsHardwareRuntime();
+/// Loads the co-located hardware plugin; a load failure returns nullptr.
+std::unique_ptr<HardwareBackend> CreateHardwareBackend();
+/// Selects hardware for a VMX build, loopback for a desktop build.
 std::unique_ptr<HardwareBackend> CreateBackend();
 
 }  // namespace wpi::studica

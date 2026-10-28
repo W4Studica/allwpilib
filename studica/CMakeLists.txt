@@ -36,6 +36,9 @@ set(studica_hardware_sources
 )
 
 if(WPILIB_WITH_STUDICA)
+    target_compile_definitions(studica PRIVATE WPI_STUDICA_HARDWARE)
+    set_property(TARGET studica APPEND PROPERTY BUILD_RPATH "$ORIGIN")
+    set_property(TARGET studica APPEND PROPERTY INSTALL_RPATH "$ORIGIN")
     add_subdirectory(drivers)
     add_library(studica_hardware SHARED ${studica_hardware_sources} src/titan/Titan.cpp)
     target_compile_features(studica_hardware PRIVATE cxx_std_20)

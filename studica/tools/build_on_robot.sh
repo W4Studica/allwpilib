@@ -97,8 +97,21 @@ runtime_sources=(
   "$STUDICA_DIR"/src/conversion/*.cpp
   "$STUDICA_DIR"/src/runtime/*.cpp
 )
-run g++ -std=c++20 -shared -fPIC -O2 -Wall -Wextra -I"$STUDICA_DIR/include" \
-  "${runtime_sources[@]}" -ldl -lpthread -o "$OUT_DIR/libstudica.so"
+run g++ -std=c++20 -shared -fPIC -O2 -Wall -Wextra -DWPI_STUDICA_HARDWARE -I"$STUDICA_DIR/include" \
+  "${runtime_sources[@]}" -ldl -lpthread '-Wl,-rpath,$ORIGIN' -o "$OUT_DIR/libstudica.so"
+
+info "libstudica_hardware.so"
+if [ "$DRY_RUN" != 1 ] && [ ! -f /usr/local/include/vmxpi/VMXPi.h ]; then
+  echo "VMX SDK headers are required for the hardware runtime" >&2
+  exit 1
+fi
+run g++ -std=c++20 -shared -fPIC -O2 -Wall -Wextra "${INC[@]}" \
+  -I/usr/local/include/vmxpi -I"$STUDICA_DIR/include" -I"$STUDICA_DIR/drivers" \
+  "$STUDICA_DIR"/src/hardware/*.cpp "$STUDICA_DIR"/src/hardware/devices/*.cpp \
+  "$STUDICA_DIR/src/conversion/DeviceConversions.cpp" "$STUDICA_DIR/src/titan/Titan.cpp" \
+  "$STUDICA_DIR"/drivers/{analog_input,dio,encoder,imu,titan}.cpp \
+  -L/usr/local/lib/vmxpi -lvmxpi_hal_cpp -lrt -lpthread -latomic \
+  -o "$OUT_DIR/libstudica_hardware.so"
 
 info "libhalsim_studica.so"
 run g++ -std=c++20 -shared -fPIC -O2 -Wall -Wextra "${INC[@]}" \
@@ -138,11 +151,9 @@ Find the VMX channel numbers first (the VMX must not be in use by another proces
 To check a wire between two VMX channels without HALSim (isolates wiring from the extension):
   sudo $OUT_DIR/dio_probe <out-vmx-channel> <in-vmx-channel>
 
-Then drive a DIO output through the simulation HAL (WPILib DIO 0 -> VMX channel <N>; DIO 1 -> VMX channel <M>, wired to <N> for a loopback):
+Then drive DIO through the simulation HAL (wire VMX output <N> to input <M>):
   sudo env LD_LIBRARY_PATH=$LIBS_DIR \\
     LD_PRELOAD=/opt/robot_manager/lib/libvmx_gpio_isr_shim.so \\
     HALSIM_EXTENSIONS=$OUT_DIR/libhalsim_studica.so \\
-    HALSIMSTUDICA_BACKEND=/opt/halsim_studica/libstudica_hardware.so \\
-    HALSIMSTUDICA_DIO_MAP="0:<N>,1:<M>" \\
-    $OUT_DIR/hal_dio_test 0 1
+    $OUT_DIR/hal_dio_test <N> <M>
 EOF

@@ -4,99 +4,33 @@
 
 #include "wpi/halsim/studica/ChannelMap.hpp"
 
-#include <charconv>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <set>
-#include <string_view>
+#include "wpi/studica/detail/backend/HardwareBackend.hpp"
 
 using namespace wpi::studica;
 
-namespace {
-
-bool ParseInt(std::string_view text, int* out) {
-  if (text.empty()) {
-    return false;
-  }
-  auto [ptr, ec] =
-      std::from_chars(text.data(), text.data() + text.size(), *out);
-  return ec == std::errc{} && ptr == text.data() + text.size();
-}
-
-}  // namespace
-
-ChannelMap ChannelMap::Parse(const std::string& text) {
+ChannelMap ChannelMap::Linear(int count, int firstVmx) {
   ChannelMap result;
-  std::string_view rest{text};
-  while (!rest.empty()) {
-    auto comma = rest.find(',');
-    std::string_view entry = rest.substr(0, comma);
-    rest = comma == std::string_view::npos ? std::string_view{}
-                                           : rest.substr(comma + 1);
-
-    if (entry.empty()) {
-      continue;
-    }
-    auto colon = entry.find(':');
-    int wpilib = 0;
-    int vmx = 0;
-    if (colon != std::string_view::npos &&
-        ParseInt(entry.substr(0, colon), &wpilib) &&
-        ParseInt(entry.substr(colon + 1), &vmx)) {
-      result.m_map[wpilib] = vmx;
-    } else {
-      result.m_rejected.emplace_back(entry);
-    }
+  for (int channel = 0; channel < count; ++channel) {
+    result.m_map.emplace(channel, firstVmx + channel);
   }
   return result;
 }
 
-std::vector<int> ChannelMap::DuplicateVmxChannels() const {
-  std::set<int> seen;
-  std::set<int> duplicates;
-  for (const auto& [wpilib, vmx] : m_map) {
-    if (!seen.insert(vmx).second) {
-      duplicates.insert(vmx);
-    }
-  }
-  return {duplicates.begin(), duplicates.end()};
-}
-
-ChannelMap ChannelMap::FromEnv(const char* envName) {
-  const char* value = std::getenv(envName);
-  return value ? Parse(value) : ChannelMap{};
-}
-
 std::optional<int> ChannelMap::Get(int wpilibChannel) const {
   auto it = m_map.find(wpilibChannel);
-  if (it == m_map.end()) {
-    return std::nullopt;
-  }
-  return it->second;
+  return it == m_map.end() ? std::nullopt : std::optional<int>{it->second};
 }
 
-ChannelMaps ChannelMaps::FromEnv() {
-  return {ChannelMap::FromEnv("HALSIMSTUDICA_DIO_MAP"),
-          ChannelMap::FromEnv("HALSIMSTUDICA_ANALOG_MAP"),
-          ChannelMap::FromEnv("HALSIMSTUDICA_PWM_MAP")};
-}
-
-Config Config::FromEnv() {
+Config Config::ForVmx() {
   Config config;
-  config.maps = ChannelMaps::FromEnv();
-  const char* imu = std::getenv("HALSIMSTUDICA_IMU");
-  config.imu = imu != nullptr && std::strcmp(imu, "1") == 0;
-  const char* backend = std::getenv("HALSIMSTUDICA_BACKEND");
-  config.i2cPort = backend && *backend ? 1 : -1;
-  if (const char* port = std::getenv("HALSIMSTUDICA_I2C_PORT")) {
-    if (!ParseInt(port, &config.i2cPort) || config.i2cPort < -1 ||
-        config.i2cPort > 1) {
-      std::fprintf(stderr,
-                   "HALSim Studica: invalid HALSIMSTUDICA_I2C_PORT; hardware "
-                   "I2C disabled\n");
-      config.i2cPort = -1;
-    }
-  }
+  config.maps.dio = ChannelMap::Linear(22);
+  config.maps.analog = ChannelMap::Linear(4, 22);
+  config.maps.pwm = ChannelMap::Linear(22);
+  config.imu = true;
+  config.i2cPort = 1;
   return config;
+}
+
+Config Config::ForRuntime() {
+  return IsHardwareRuntime() ? ForVmx() : Config{};
 }

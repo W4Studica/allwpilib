@@ -4,68 +4,41 @@
 
 #pragma once
 
+#include <initializer_list>
 #include <map>
 #include <optional>
-#include <string>
-#include <vector>
 
 namespace wpi::studica {
 
-/**
- * Maps WPILib channel numbers to VMX channel indexes.
- *
- * No mapping is assumed. Entries come from an environment variable of the form
- * "<wpilib>:<vmx>,<wpilib>:<vmx>" (for example
- * HALSIMSTUDICA_DIO_MAP="0:12,1:13"). Unmapped channels are left alone.
- */
+// Fixed board wiring. Explicit entries are used by backend unit tests only.
 class ChannelMap {
  public:
   ChannelMap() = default;
-
-  /// Parses the given string. Malformed entries are skipped and listed by
-  /// Rejected().
-  static ChannelMap Parse(const std::string& text);
-
-  /// Reads and parses the environment variable. Empty map if it is unset.
-  static ChannelMap FromEnv(const char* envName);
-
+  ChannelMap(std::initializer_list<std::pair<const int, int>> entries)
+      : m_map{entries} {}
+  static ChannelMap Linear(int count, int firstVmx = 0);
   std::optional<int> Get(int wpilibChannel) const;
   size_t size() const { return m_map.size(); }
 
-  /// Non-empty entries that could not be parsed, as written (for example "7;8"
-  /// or " 7:4").
-  const std::vector<std::string>& Rejected() const { return m_rejected; }
-
-  /// VMX channels that more than one WPILib channel is mapped to. Only one of
-  /// them can claim it.
-  std::vector<int> DuplicateVmxChannels() const;
-
  private:
   std::map<int, int> m_map;
-  std::vector<std::string> m_rejected;
 };
 
-/// One map per kind of channel. Each is read from its own environment variable.
 struct ChannelMaps {
   ChannelMap dio;
   ChannelMap analog;
   ChannelMap pwm;
-
-  /// HALSIMSTUDICA_DIO_MAP, HALSIMSTUDICA_ANALOG_MAP and HALSIMSTUDICA_PWM_MAP.
-  static ChannelMaps FromEnv();
 };
 
-/// Everything halsim_studica is told by its environment.
+// Internal bridge settings; ordinary simulation does not claim hardware.
 struct Config {
   ChannelMaps maps;
-  /// HALSIMSTUDICA_IMU=1. The sim IMU has no "initialized" signal, so it is
-  /// opt-in.
   bool imu = false;
-  /// HALSIMSTUDICA_I2C_PORT: 0 or 1, -1 disables hardware I2C. FromEnv
-  /// defaults to port 1 only when a backend plugin is selected.
   int i2cPort = -1;
 
-  static Config FromEnv();
+  // DIO/PWM use VMX channel indexes; AnalogInput 0..3 uses VMX 22..25.
+  static Config ForVmx();
+  static Config ForRuntime();
 };
 
 }  // namespace wpi::studica

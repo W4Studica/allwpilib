@@ -55,9 +55,9 @@ struct Fixture {
     HALSIM_ResetRoboRioData();
     hw = backend.get();
     Config config;
-    config.maps.dio = ChannelMap::Parse("2:20,4:40,5:41");
-    config.maps.analog = ChannelMap::Parse("1:30");
-    config.maps.pwm = ChannelMap::Parse("3:15");
+    config.maps.dio = ChannelMap{{2, 20}, {4, 40}, {5, 41}};
+    config.maps.analog = ChannelMap{{1, 30}};
+    config.maps.pwm = ChannelMap{{3, 15}};
     config.imu = imuEnabled;
     sim =
         std::make_unique<HALSimStudica>(std::move(backend), std::move(config));
@@ -558,4 +558,36 @@ TEST_CASE("Encoder waits for a valid initial hardware baseline",
   FreeEncoder(h);
   REQUIRE(initial == 0);
   REQUIRE(moved == 5);
+}
+
+TEST_CASE("Default VMX wiring connects initialized ports without configuration",
+          "[studica][wiring]") {
+  HALSIM_ResetDIOData(0);
+  HALSIM_ResetAnalogInData(0);
+  auto backend = std::make_unique<LoopbackBackend>();
+  auto* hardware = backend.get();
+  {
+    Config config = Config::ForVmx();
+    config.i2cPort = -1;  // I2C provider ownership is covered separately.
+    HALSimStudica sim{std::move(backend), config};
+    REQUIRE(sim.Start(false));
+    sim.Poll();
+    REQUIRE(hardware->IsImuClaimed());
+    REQUIRE_FALSE(hardware->IsClaimed(0));
+    REQUIRE_FALSE(hardware->IsAnalogClaimed(22));
+
+    HALSIM_SetDIOInitialized(0, true);
+    HALSIM_SetDIOIsInput(0, true);
+    HALSIM_SetAnalogInInitialized(0, true);
+    sim.Poll();
+    REQUIRE(hardware->IsClaimed(0));
+    REQUIRE(hardware->IsAnalogClaimed(22));
+    hardware->Drive(0, true);
+    hardware->DriveAnalog(22, 2.5);
+    sim.Poll();
+    REQUIRE(HALSIM_GetDIOValue(0));
+    REQUIRE(HALSIM_GetAnalogInVoltage(0) == Catch::Approx(2.5));
+  }
+  HALSIM_ResetDIOData(0);
+  HALSIM_ResetAnalogInData(0);
 }

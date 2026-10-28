@@ -40,8 +40,8 @@ struct Fixture {
     Config config;
     config.imu = imu;
     config.i2cPort = 1;
-    config.maps.dio = ChannelMap::Parse("2:20");
-    config.maps.pwm = ChannelMap::Parse("3:15");
+    config.maps.dio = ChannelMap{{2, 20}};
+    config.maps.pwm = ChannelMap{{3, 15}};
     sim = std::make_unique<HALSimStudica>(std::move(backend), config);
     REQUIRE(sim->Start(false));
   }
@@ -341,25 +341,8 @@ TEST_CASE("Edge capture never takes over a digital output",
 #ifndef _WIN32
 TEST_CASE("Default PC simulation leaves legacy I2C callbacks in control",
           "[studica][i2c]") {
-  struct UnsetEnv {
-    const char* name;
-    std::optional<std::string> old;
-    explicit UnsetEnv(const char* n) : name(n) {
-      if (const char* value = std::getenv(name)) {
-        old = value;
-      }
-      unsetenv(name);
-    }
-    ~UnsetEnv() {
-      if (old) {
-        setenv(name, old->c_str(), 1);
-      } else {
-        unsetenv(name);
-      }
-    }
-  } backendEnv{"HALSIMSTUDICA_BACKEND"}, portEnv{"HALSIMSTUDICA_I2C_PORT"};
   HALSIM_ResetI2CData(1);
-  HALSimStudica sim{std::make_unique<LoopbackBackend>(), Config::FromEnv()};
+  HALSimStudica sim{std::make_unique<LoopbackBackend>(), Config::ForRuntime()};
   REQUIRE(sim.Start(false));
   int calls = 0;
   auto callback = [](const char*, void* param, const uint8_t*, unsigned int) {

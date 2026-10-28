@@ -3,7 +3,6 @@
 // the WPILib BSD license file in the root directory of this project.
 
 #include <cstdio>
-#include <cstdlib>
 #include <string>
 
 #include "wpi/studica/detail/backend/DlBackend.hpp"
@@ -12,27 +11,34 @@
 
 namespace wpi::studica {
 
-std::unique_ptr<HardwareBackend> CreateBackend() {
-  const char* path = std::getenv("HALSIMSTUDICA_BACKEND");
-  if (path == nullptr || *path == '\0') {
-    std::puts(
-        "HALSim Studica: HALSIMSTUDICA_BACKEND is not set; using the loopback "
-        "backend "
-        "(no VMX hardware is driven)");
-    return std::make_unique<LoopbackBackend>();
-  }
+bool IsHardwareRuntime() {
+#ifdef WPI_STUDICA_HARDWARE
+  return true;
+#else
+  return false;
+#endif
+}
 
-  // A backend was asked for explicitly. Never fall back to loopback on failure:
-  // the robot code would appear to work while no hardware is driven.
+std::unique_ptr<HardwareBackend> CreateHardwareBackend() {
+  // The runtime libraries are deployed together. The VMX build sets $ORIGIN
+  // as its search path, so no project-specific absolute path is needed.
+  constexpr const char* library = "libstudica_hardware.so";
   std::string error;
-  auto backend = LoadBackendPlugin(path, &error);
+  auto backend = LoadBackendPlugin(library, &error);
   if (!backend) {
-    std::fprintf(stderr, "HALSim Studica: cannot load backend '%s': %s\n", path,
+    std::fprintf(stderr, "HALSim Studica: cannot load hardware backend: %s\n",
                  error.c_str());
-    return nullptr;
+    return nullptr;  // A hardware failure must never look like successful simulation.
   }
-  std::printf("HALSim Studica: using backend %s\n", path);
+  std::puts("HALSim Studica: hardware backend loaded");
   return backend;
+}
+
+std::unique_ptr<HardwareBackend> CreateBackend() {
+  if (IsHardwareRuntime()) {
+    return CreateHardwareBackend();
+  }
+  return std::make_unique<LoopbackBackend>();
 }
 
 }  // namespace wpi::studica

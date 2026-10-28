@@ -1,5 +1,4 @@
 // Drives WPILib DIO through the simulation HAL. With halsim_studica loaded (HALSIM_EXTENSIONS) and a mapping from the
-// WPILib channels to VMX channels (HALSIMSTUDICA_DIO_MAP), the pins on the VMX move.
 //
 //   hal_dio_test <output-channel> [input-channel]
 //

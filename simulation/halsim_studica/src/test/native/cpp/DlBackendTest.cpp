@@ -5,7 +5,6 @@
 #include "wpi/studica/detail/backend/DlBackend.hpp"
 
 #include <cstdint>
-#include <cstdlib>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,8 +12,6 @@
 #include "wpi/studica/detail/backend/HardwareBackend.hpp"
 
 using namespace wpi::studica;
-
-extern "C" int HALSIM_InitExtension(void);
 
 #ifndef _WIN32
 
@@ -93,27 +90,15 @@ TEST_CASE("A plugin with a different ABI version is rejected",
   REQUIRE(error.find("ABI mismatch") != std::string::npos);
 }
 
-TEST_CASE("CreateBackend uses loopback only when no backend is named",
+TEST_CASE("Desktop factory selects simulation without user configuration",
           "[halsim_studica][plugin]") {
-  unsetenv("HALSIMSTUDICA_BACKEND");
+  REQUIRE_FALSE(IsHardwareRuntime());
   REQUIRE(CreateBackend() != nullptr);
-
-  setenv("HALSIMSTUDICA_BACKEND", HALSIMSTUDICA_TEST_PLUGIN, 1);
-  auto fromPlugin = CreateBackend();
-  REQUIRE(fromPlugin != nullptr);
-
-  // A named backend that cannot be loaded must NOT fall back to loopback.
-  setenv("HALSIMSTUDICA_BACKEND", "/nonexistent/libnothing.so", 1);
-  REQUIRE(CreateBackend() == nullptr);
-
-  unsetenv("HALSIMSTUDICA_BACKEND");
 }
 
-TEST_CASE("The extension refuses to initialize when its backend cannot load",
+TEST_CASE("Missing hardware plugin does not fall back to simulation",
           "[halsim_studica][plugin]") {
-  setenv("HALSIMSTUDICA_BACKEND", "/nonexistent/libnothing.so", 1);
-  REQUIRE(HALSIM_InitExtension() == -1);
-  unsetenv("HALSIMSTUDICA_BACKEND");
+  REQUIRE(CreateHardwareBackend() == nullptr);
 }
 
 #endif
