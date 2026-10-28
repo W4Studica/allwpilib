@@ -15,6 +15,7 @@ licenses, and/or restrictions:
 
 Program               Locations
 -------               ---------
+Studica ROS2 drivers   studica/drivers/ (Apache-2.0; LICENSE and SOURCE.txt there)
 LLVM                  wpiutil/src/main/native/thirdparty/llvm
                       wpiutil/src/test/native/cpp/llvm/
 JSON for Classic C++  wpiutil/src/main/native/thirdparty/json
@@ -2099,3 +2100,15 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+==============================================================================
+Studica ROS2 drivers
+==============================================================================
+
+Source: https://github.com/Studica-Robotics/ROS2/tree/f97edec/drivers
+Copied without driver edits; the source ref is recorded in studica/drivers/SOURCE.txt.
+These files retain Apache-2.0 licensing, separately from WPILib's BSD-3-Clause
+license. See studica/drivers/LICENSE for the complete Apache License 2.0.
+The VMX runtime distribution includes that text as licenses/Studica-LICENSE
+and the provenance as licenses/Studica-SOURCE.txt. This does not license the
+separate VMX HAL SDK or image-derived binaries.
