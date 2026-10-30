@@ -42,10 +42,13 @@ def main():
                 '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + str(library.resolve()) if build_type == 'Release'
                 else '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + str((build / 'lib').resolve()),
             ], check=True)
-            targets = ['halsim_studica', 'studica_hardware'] if build_type == 'Release' else ['halsim_studica']
+            targets = ['halsim_studica', 'halsim_ds_relay']
+            if build_type == 'Release':
+                targets.append('studica_hardware')
             subprocess.run(['cmake', '--build', str(build), '--parallel', '4', '--target', *targets], check=True)
             if build_type == 'Debug':
-                shutil.copy2(build / 'lib/libhalsim_studicad.so', library)
+                for name in ['libhalsim_studicad.so', 'libhalsim_ds_relayd.so']:
+                    shutil.copy2(build / 'lib' / name, library)
         for build_type in ['release', 'debug']:
             shutil.rmtree(staging / ('build-' + build_type))
         headers = staging / 'include'

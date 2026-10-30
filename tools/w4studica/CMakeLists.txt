@@ -24,3 +24,4 @@ set_target_properties(hal PROPERTIES
 add_link_options("-Wl,--no-undefined" "-Wl,-rpath-link,${WPILIB_LIBS}")
 add_subdirectory("${WPILIB_SOURCE_DIR}/studica" studica)
 add_subdirectory("${WPILIB_SOURCE_DIR}/simulation/halsim_studica" halsim_studica)
+add_subdirectory("${WPILIB_SOURCE_DIR}/simulation/halsim_ds_relay" halsim_ds_relay)
