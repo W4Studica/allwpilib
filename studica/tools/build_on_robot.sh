@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-VERSION="${WPILIB_VERSION:-2027.0.0-alpha-7}"
+VERSION="${WPILIB_VERSION:-2027.0.0-alpha-8}"
 MAVEN="https://frcmaven.wpi.edu/artifactory/release/org/wpilib"
 LIBS_DIR="${LIBS_DIR:-$HOME/wpilib-libs}"
 OUT_DIR="${OUT_DIR:-$HOME/halsim_studica-build}"
