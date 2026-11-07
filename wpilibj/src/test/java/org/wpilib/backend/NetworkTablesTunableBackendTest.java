@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.geometry.proto.detail.ProtobufTranslation2d;
 import org.wpilib.networktables.GenericEntry;
@@ -220,6 +222,152 @@ class NetworkTablesTunableBackendTest {
     assertEquals(13.5f, floatValue.get());
     assertEquals(14.75, doubleValue.get());
     assertEquals("tuned", stringValue.get());
+  }
+
+  @Test
+  void tuneRevisionTracksNetworkTablesRemoteUpdatesWithoutConfigOrCallback() {
+    Tunable<Double> tunable = Tunable.create(1.0);
+    Tunables.publish("revision", tunable);
+
+    assertEquals(0, TunableRegistry.getTuneRevision(tunable));
+
+    m_inst.getTopic("/Tunables/revision").getGenericEntry().setDouble(2.0);
+    m_inst.flush();
+    TunableRegistry.update();
+
+    assertEquals(2.0, tunable.get());
+    assertEquals(1, TunableRegistry.getTuneRevision(tunable));
+    assertEquals(1, TunableRegistry.getTuneRevision(tunable));
+  }
+
+  @Test
+  void tuneRevisionCountsRobustInitialRemoteApplication() {
+    try (GenericPublisher publisher =
+        m_inst
+            .getTopic("/Tunables/initialRevision/tune")
+            .genericPublishEx("double", "{\"retained\":true}")) {
+      publisher.setDouble(4.0);
+      m_inst.flush();
+
+      Tunable<Double> tunable = Tunable.createConfig(1.0, robust());
+      Tunables.publish("initialRevision", tunable);
+
+      assertEquals(4.0, tunable.get());
+      assertEquals(4.0, value("initialRevision").getDouble(0.0));
+      assertEquals(1, TunableRegistry.getTuneRevision(tunable));
+    }
+  }
+
+  @Test
+  void tuneRevisionCountsWriteDuringInitialPublicationOnce() {
+    AtomicReference<Double> stored = new AtomicReference<>(1.0);
+    AtomicInteger gets = new AtomicInteger();
+    AtomicInteger tunes = new AtomicInteger();
+    try (var publisher = m_inst.getDoubleTopic("/Tunables/racingRevision/tune").publish()) {
+      Tunable<Double> tunable =
+          Tunable.createConfig(
+              () -> {
+                if (gets.getAndIncrement() == 0) {
+                  // The backend has registered its listener before invoking this getter.
+                  publisher.set(4.0);
+                }
+                return stored.get();
+              },
+              stored::set,
+              Double.class,
+              robust().withOnTune(tunes::incrementAndGet));
+      Tunables.publish("racingRevision", tunable);
+      TunableRegistry.update();
+
+      assertEquals(4.0, stored.get());
+      assertEquals(1, TunableRegistry.getTuneRevision(tunable));
+      assertEquals(1, tunes.get());
+      TunableRegistry.update();
+      assertEquals(1, TunableRegistry.getTuneRevision(tunable));
+
+      publisher.set(5.0);
+      TunableRegistry.update();
+      assertEquals(5.0, stored.get());
+      assertEquals(2, TunableRegistry.getTuneRevision(tunable));
+      assertEquals(2, tunes.get());
+    }
+  }
+
+  @Test
+  void initialSnapshotPreservesOtherQueuedTunes() {
+    var existing = Tunable.create(1.0);
+    Tunables.publish("existingRevision", existing);
+    try (var existingPub = m_inst.getDoubleTopic("/Tunables/existingRevision").publish();
+        var initialPub = m_inst.getDoubleTopic("/Tunables/snapshotRevision/tune").publish()) {
+      existingPub.set(2.0);
+      initialPub.set(4.0);
+      var initial = Tunable.createConfig(1.0, robust());
+      Tunables.publish("snapshotRevision", initial);
+      assertEquals(4.0, initial.get());
+      assertEquals(1, TunableRegistry.getTuneRevision(initial));
+
+      initialPub.set(5.0);
+      TunableRegistry.update();
+      assertEquals(2.0, existing.get());
+      assertEquals(1, TunableRegistry.getTuneRevision(existing));
+      assertEquals(5.0, initial.get());
+      assertEquals(2, TunableRegistry.getTuneRevision(initial));
+      TunableRegistry.update();
+      assertEquals(2, TunableRegistry.getTuneRevision(initial));
+    }
+  }
+
+  @Test
+  void initialSnapshotIgnoresMismatchedType() {
+    try (var publisher = m_inst.getStringTopic("/Tunables/wrongInitialType/tune").publish()) {
+      publisher.set("wrong type");
+      var tunable = Tunable.createConfig(1.0, robust());
+      Tunables.publish("wrongInitialType", tunable);
+      TunableRegistry.update();
+      assertEquals(1.0, tunable.get());
+      assertEquals(0, TunableRegistry.getTuneRevision(tunable));
+    }
+  }
+
+  @Test
+  void tuneRevisionCountsRobustInitialChildApplication() {
+    try (GenericPublisher publisher =
+        m_inst
+            .getTopic("/Tunables/complexInitialRevision/child/tune")
+            .genericPublishEx("double", "{\"retained\":true}")) {
+      publisher.setDouble(4.0);
+      m_inst.flush();
+
+      RobustChildComplexTunable complex = new RobustChildComplexTunable();
+      Tunables.publish("complexInitialRevision", complex);
+
+      assertEquals(4.0, complex.m_child.get());
+      assertEquals(4.0, value("complexInitialRevision/child").getDouble(0.0));
+      assertEquals(1, TunableRegistry.getTuneRevision(complex.m_child));
+      assertEquals(1, TunableRegistry.getTuneRevision(complex));
+    }
+  }
+
+  @Test
+  void tuneRevisionIgnoresGetterRefreshes() {
+    AtomicReference<Double> value = new AtomicReference<>(1.0);
+    TunableDouble tunable =
+        TunableDouble.createConfig(
+            value::get, value::set, robust().withPolling(TunableConfig.Polling.ALWAYS_GET));
+    Tunables.publish("getterRevision", tunable);
+
+    value.set(2.0);
+    TunableRegistry.update();
+
+    assertEquals(2.0, value("getterRevision").getDouble(0.0));
+    assertEquals(0, TunableRegistry.getTuneRevision(tunable));
+
+    tune("getterRevision").setDouble(3.0);
+    m_inst.flush();
+    TunableRegistry.update();
+
+    assertEquals(3.0, tunable.get());
+    assertEquals(1, TunableRegistry.getTuneRevision(tunable));
   }
 
   @Test
@@ -500,6 +648,7 @@ class NetworkTablesTunableBackendTest {
       assertDoesNotThrow(TunableRegistry::update);
     }
     assertEquals(initial, tunable.get());
+    assertEquals(0, TunableRegistry.getTuneRevision(tunable));
     assertEquals(0, calls.get());
     assertEquals(0, entry.readQueue().length);
     assertWarning(warnings, "/Tunables/translation", "rejected struct tune payload");
@@ -559,6 +708,7 @@ class NetworkTablesTunableBackendTest {
       assertDoesNotThrow(TunableRegistry::update);
     }
     assertArrayEquals(initial, tunable.get());
+    assertEquals(0, TunableRegistry.getTuneRevision(tunable));
     assertEquals(0, calls.get());
     assertEquals(0, entry.readQueue().length);
     assertWarning(warnings, "/Tunables/translations", "rejected struct array tune payload");
@@ -618,6 +768,8 @@ class NetworkTablesTunableBackendTest {
 
     assertEquals(initial, struct.get());
     assertEquals(initialProto, protobuf.get());
+    assertEquals(0, TunableRegistry.getTuneRevision(struct));
+    assertEquals(0, TunableRegistry.getTuneRevision(protobuf));
     assertWarning(warnings, "/Tunables/throwingStructTune", "rejected struct tune payload");
     assertWarning(warnings, "/Tunables/throwingProtobufTune", "rejected protobuf tune payload");
   }
@@ -772,17 +924,21 @@ class NetworkTablesTunableBackendTest {
     }
 
     assertEquals(initial, tunable.get());
+    assertEquals(0, TunableRegistry.getTuneRevision(tunable));
     assertEquals(0, calls.get());
     assertEquals(0, entry.readQueue().length);
     assertWarning(warnings, "/Tunables/malformedTranslation", "rejected protobuf tune payload");
   }
 
-  @Test
-  void selectableDashboardConnectsAfterPublish() {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void selectableDashboardConnectsAfterPublish(boolean legacy) {
     Selectable<Integer> chooser = makeSelectable();
     Tunables.publish("auto", chooser);
+    TunableRegistry.update();
 
-    try (var dashboard = new DashboardSelectable("/Tunables/auto")) {
+    try (var dashboard =
+        new DashboardSelectable(legacy ? "/SmartDashboard/auto" : "/Tunables/auto", legacy)) {
       assertTrue(dashboard.exists());
       assertEquals("one", dashboard.getDefault());
       assertArrayEquals(new String[] {"one", "two"}, dashboard.getOptions());
@@ -800,11 +956,14 @@ class NetworkTablesTunableBackendTest {
     }
   }
 
-  @Test
-  void selectableDashboardConnectsBeforePublish() {
-    try (var dashboard = new DashboardSelectable("/Tunables/auto")) {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void selectableDashboardConnectsBeforePublish(boolean legacy) {
+    try (var dashboard =
+        new DashboardSelectable(legacy ? "/SmartDashboard/auto" : "/Tunables/auto", legacy)) {
       Selectable<Integer> chooser = makeSelectable();
       Tunables.publish("auto", chooser);
+      TunableRegistry.update();
 
       assertTrue(dashboard.exists());
       assertEquals("one", dashboard.getDefault());
@@ -822,9 +981,11 @@ class NetworkTablesTunableBackendTest {
     }
   }
 
-  @Test
-  void selectableRetainsDashboardSelectionAfterRepublish() {
-    try (var dashboard = new DashboardSelectable("/Tunables/auto")) {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void selectableRetainsDashboardSelectionAfterRepublish(boolean legacy) {
+    try (var dashboard =
+        new DashboardSelectable(legacy ? "/SmartDashboard/auto" : "/Tunables/auto", legacy)) {
       Selectable<Integer> firstChooser = makeSelectable();
       Tunables.publish("auto", firstChooser);
 
@@ -846,6 +1007,112 @@ class NetworkTablesTunableBackendTest {
       assertEquals("two", dashboard.getSelected());
       assertEquals("two", dashboard.getActive());
       assertEquals(2, secondChooser.getSelected());
+    }
+  }
+
+  @Test
+  void selectableSharesLegacyAndModernSelections() {
+    var chooser = makeSelectable();
+    AtomicInteger calls = new AtomicInteger();
+    chooser.onChange(value -> calls.incrementAndGet());
+    Tunables.publish("auto", chooser);
+    try (var legacy = new DashboardSelectable("/SmartDashboard/auto", true);
+        var modern = new DashboardSelectable("/Tunables/auto", false)) {
+      TunableRegistry.update();
+      assertEquals("Selectable", m_inst.getEntry("/Tunables/auto/.type").getString(""));
+      assertEquals("String Chooser", m_inst.getEntry("/SmartDashboard/auto/.type").getString(""));
+      assertTrue(m_inst.getEntry("/SmartDashboard/auto/.instance").getInteger(-1) >= 0);
+      assertEquals("auto", m_inst.getEntry("/SmartDashboard/auto/.name").getString(""));
+      assertTrue(m_inst.getEntry("/SmartDashboard/auto/.controllable").getBoolean(false));
+
+      legacy.setSelected("two");
+      TunableRegistry.update();
+      assertEquals(2, chooser.getSelected());
+      assertEquals("two", modern.getSelected());
+      assertEquals("two", modern.getActive());
+      assertEquals(1, calls.get());
+      assertEquals(1, TunableRegistry.getTuneRevision(chooser));
+
+      modern.setSelected("one");
+      TunableRegistry.update();
+      assertEquals(1, chooser.getSelected());
+      assertEquals("one", legacy.getSelected());
+      assertEquals("one", legacy.getActive());
+
+      legacy.setSelected("two");
+      TunableRegistry.update();
+      assertEquals(2, chooser.getSelected());
+      TunableRegistry.update();
+      assertEquals(3, calls.get());
+      assertEquals(3, TunableRegistry.getTuneRevision(chooser));
+
+      chooser.remove("two");
+      TunableRegistry.update();
+      assertEquals("one", legacy.getActive());
+      assertArrayEquals(new String[] {"one"}, legacy.getOptions());
+      chooser.addDefault("three", 3);
+      TunableRegistry.update();
+      assertEquals("three", legacy.getDefault());
+      assertEquals("three", legacy.getActive());
+      chooser.clear();
+      TunableRegistry.update();
+      assertEquals("", legacy.getActive());
+      assertArrayEquals(new String[0], legacy.getOptions());
+      assertEquals(3, calls.get());
+
+      Tunables.remove("auto");
+      assertFalse(m_inst.getTopic("/SmartDashboard/auto/.type").exists());
+      assertFalse(m_inst.getTopic("/SmartDashboard/auto/.instance").exists());
+      assertFalse(m_inst.getTopic("/SmartDashboard/auto/active").exists());
+      assertFalse(legacy.exists());
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {-1, 0, 1})
+  void selectableUsesNewestRetainedDashboardSelection(int legacyTimeOffset) {
+    try (var legacy = m_inst.getStringTopic("/SmartDashboard/auto/selected").publish();
+        var modern = m_inst.getStringTopic("/Tunables/auto/selected/tune").publish()) {
+      legacy.set("two", 200 + legacyTimeOffset);
+      modern.set("one", 200);
+      var chooser = makeSelectable();
+      AtomicInteger calls = new AtomicInteger();
+      chooser.onChange(value -> calls.incrementAndGet());
+      Tunables.publish("auto", chooser);
+      TunableRegistry.update();
+      assertEquals(legacyTimeOffset >= 0 ? 2 : 1, chooser.getSelected());
+      assertEquals(1, calls.get());
+      TunableRegistry.update();
+      assertEquals(1, calls.get());
+    }
+  }
+
+  @Test
+  void selectableCompatibilityFollowsAliasesAndBackendMigration() {
+    var chooser = makeSelectable();
+    Tunables.publish("nested/auto", chooser);
+    Tunables.publish("alias", chooser);
+    try (var legacy = new DashboardSelectable("/SmartDashboard/nested/auto", true);
+        var alias = new DashboardSelectable("/SmartDashboard/alias", true)) {
+      legacy.setSelected("two");
+      TunableRegistry.update();
+      assertEquals(2, chooser.getSelected());
+      assertEquals("two", legacy.getActive());
+      assertEquals("two", alias.getActive());
+      Tunables.remove("alias");
+      assertFalse(alias.exists());
+
+      TunableRegistry.registerBackend(
+          "nested", new NetworkTablesTunableBackend(m_inst, "/OtherTunables"));
+      legacy.setSelected("one");
+      TunableRegistry.update();
+      assertEquals(1, chooser.getSelected());
+      assertEquals("one", legacy.getActive());
+      assertEquals(
+          "one", m_inst.getEntry("/OtherTunables/nested/auto/selected/value").getString(""));
+      Tunables.remove("nested/auto");
+      assertFalse(legacy.exists());
+      assertFalse(m_inst.getTopic("/SmartDashboard/nested/auto/.type").exists());
     }
   }
 
@@ -893,16 +1160,34 @@ class NetworkTablesTunableBackendTest {
   @Test
   void onTuneRunsForMutableRemoteUpdates() {
     AtomicInteger calls = new AtomicInteger();
+    AtomicReference<Long> callbackRevision = new AtomicReference<>();
+    AtomicReference<Tunable<Double>> tunableReference = new AtomicReference<>();
     Tunable<Double> tunable =
-        Tunable.createConfig(1.0, robust().withOnTune(calls::incrementAndGet));
+        Tunable.createConfig(
+            1.0,
+            robust()
+                .withOnTune(
+                    () -> {
+                      callbackRevision.set(TunableRegistry.getTuneRevision(tunableReference.get()));
+                      calls.incrementAndGet();
+                      tunableReference.get().set(4.0);
+                    }));
+    tunableReference.set(tunable);
     Tunables.publish("mutable", tunable);
 
     tune("mutable").setDouble(2.0);
     m_inst.flush();
     TunableRegistry.update();
 
-    assertEquals(2.0, tunable.get());
+    assertEquals(4.0, tunable.get());
     assertEquals(1, calls.get());
+    assertEquals(1L, callbackRevision.get());
+    assertEquals(1, TunableRegistry.getTuneRevision(tunable));
+
+    TunableRegistry.update();
+
+    assertEquals(1, calls.get());
+    assertEquals(1, TunableRegistry.getTuneRevision(tunable));
   }
 
   @Test
@@ -1133,6 +1418,7 @@ class NetworkTablesTunableBackendTest {
     TunableRegistry.update();
 
     assertEquals(1.0, tunable.get());
+    assertEquals(0, TunableRegistry.getTuneRevision(tunable));
     assertEquals(0, calls.get());
   }
 
@@ -1364,6 +1650,15 @@ class NetworkTablesTunableBackendTest {
     private int m_updates;
   }
 
+  private static final class RobustChildComplexTunable implements ComplexTunable {
+    @Override
+    public void publishTunable(TunableTable table) {
+      table.publish("child", m_child);
+    }
+
+    private final Tunable<Double> m_child = Tunable.createConfig(1.0, robust());
+  }
+
   private static final class DefaultTypeComplexTunable implements ComplexTunable {
     @Override
     public void publishTunable(TunableTable table) {
@@ -1398,14 +1693,14 @@ class NetworkTablesTunableBackendTest {
   }
 
   private final class DashboardSelectable implements AutoCloseable {
-    DashboardSelectable(String path) {
+    DashboardSelectable(String path, boolean legacy) {
+      String selected = legacy ? "/selected" : "/selected/tune";
       m_default = m_inst.getTopic(path + "/default").genericSubscribe("string");
-      m_selected = m_inst.getTopic(path + "/selected/tune").genericSubscribe("string");
+      m_selected = m_inst.getTopic(path + selected).genericSubscribe("string");
       m_selectedPublisher =
-          m_inst
-              .getTopic(path + "/selected/tune")
-              .genericPublishEx("string", "{\"retained\":true}");
-      m_active = m_inst.getTopic(path + "/selected/value").genericSubscribe("string");
+          m_inst.getTopic(path + selected).genericPublishEx("string", "{\"retained\":true}");
+      String active = legacy ? "/active" : "/selected/value";
+      m_active = m_inst.getTopic(path + active).genericSubscribe("string");
       m_options = m_inst.getTopic(path + "/options").genericSubscribe("string[]");
     }
 

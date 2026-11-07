@@ -7,18 +7,61 @@ import wpilib
 import wpilib.simulation
 
 
+@pytest.fixture
+def mock_tunable_backend():
+    tunables.TunableRegistry.reset()
+    backend = tunables.MockTunableBackend()
+    tunables.TunableRegistry.register_backend("", backend)
+    try:
+        yield backend
+    finally:
+        tunables.TunableRegistry.reset()
+
+
+def _register_networktables_telemetry_backend(nt) -> None:
+    telemetry.TelemetryRegistry.register_backend(
+        "", wpilib.NetworkTablesTelemetryBackend(nt, "/Telemetry")
+    )
+
+
+def _register_networktables_tunable_backend(nt) -> None:
+    tunables.TunableRegistry.register_backend(
+        "", wpilib.NetworkTablesTunableBackend(nt, "/Tunables")
+    )
+
+
+def test_networktables_backend_registry_publication_uses_native_implementation(nt):
+    class Backend(wpilib.NetworkTablesTunableBackend):
+        def publish(self, *args):
+            return False
+
+    tunables.TunableRegistry.reset()
+    backend = Backend(nt, "/Tunables")
+    subscriber = nt.get_topic("/Tunables/value").generic_subscribe("int")
+    try:
+        tunables.TunableRegistry.register_backend("", backend)
+        value = tunables.Tunable(1)
+
+        assert tunables.publish("value", value) is True
+        assert subscriber.get_integer(0) == 1
+
+        value.set(2)
+        tunables.TunableRegistry.update()
+        assert subscriber.get_integer(0) == 2
+    finally:
+        tunables.TunableRegistry.reset()
+
+
 class DashboardSelectable:
-    def __init__(self, nt, path: str) -> None:
+    def __init__(self, nt, path: str, legacy: bool = False) -> None:
+        selected = "/selected" if legacy else "/selected/tune"
+        active = "/active" if legacy else "/selected/value"
         self._default = nt.get_topic(f"{path}/default").generic_subscribe("string")
-        self._selected = nt.get_topic(f"{path}/selected/tune").generic_subscribe(
-            "string"
+        self._selected = nt.get_topic(f"{path}{selected}").generic_subscribe("string")
+        self._selected_publisher = nt.get_topic(f"{path}{selected}").generic_publish_ex(
+            "string", {"retained": True}
         )
-        self._selected_publisher = nt.get_topic(
-            f"{path}/selected/tune"
-        ).generic_publish_ex("string", {"retained": True})
-        self._active = nt.get_topic(f"{path}/selected/value").generic_subscribe(
-            "string"
-        )
+        self._active = nt.get_topic(f"{path}{active}").generic_subscribe("string")
         self._options = nt.get_topic(f"{path}/options").generic_subscribe("string[]")
 
     def close(self) -> None:
@@ -83,9 +126,38 @@ def test_telemetry_tunable_flat_namespace():
         assert not hasattr(wpilib, name)
 
 
+def test_field2d_python_publish_override_receives_native_table(
+    mock_tunable_backend,
+):
+    received: list[tunables.TunableTable] = []
+
+    class CustomField(wpilib.Field2d):
+        def publish_tunable(self, table: tunables.TunableTable) -> None:
+            received.append(table)
+            table.add_int("custom", 3)
+
+    tunables.publish("field", CustomField())
+
+    assert len(received) == 1
+    assert type(received[0]) is tunables.TunableTable
+    assert mock_tunable_backend.get_value("/field/custom") == 3
+
+
+def test_field2d_python_subclass_uses_native_tunable_fallback(
+    mock_tunable_backend,
+):
+    class DerivedField2d(wpilib.Field2d):
+        pass
+
+    field = DerivedField2d()
+
+    assert tunables.publish("derivedField", field) is True
+    assert mock_tunable_backend.get_value("/derivedField/Robot") == bytes(24)
+
+
 def test_register_networktables_telemetry_backend(nt):
     telemetry.TelemetryRegistry.reset()
-    telemetry.TelemetryRegistry.register_networktables_backend()
+    _register_networktables_telemetry_backend(nt)
 
     telemetry.log("helperTelemetry", 2.5)
 
@@ -96,7 +168,7 @@ def test_register_networktables_telemetry_backend(nt):
 
 def test_register_networktables_tunable_backend(nt):
     tunables.TunableRegistry.reset()
-    tunables.TunableRegistry.register_networktables_backend()
+    _register_networktables_tunable_backend(nt)
 
     value = tunables.Tunable(1.0)
     tunables.publish("helperTunable", value)
@@ -134,6 +206,58 @@ def test_networktables_tunable_getter_setter_echoes_canonical_value(nt):
     assert value_entry.get_double(0.0) == pytest.approx(5.0)
 
 
+def test_networktables_tunable_revision_uses_native_backend_state(nt):
+    value = tunables.Tunable(1.0, robust=True)
+    tunables.publish("revision", value)
+
+    assert tunables.TunableRegistry.get_tune_revision(value) == 0
+
+    nt.get_entry("/Tunables/revision/tune").set_double(2.0)
+    nt.flush()
+    tunables.TunableRegistry.update()
+
+    assert value.get() == pytest.approx(2.0)
+    assert tunables.TunableRegistry.get_tune_revision(value) == 1
+
+    retained = nt.get_topic("/Tunables/initialRevision/tune").generic_publish_ex(
+        "double", {"retained": True}
+    )
+    try:
+        retained.set_double(4.0)
+        nt.flush()
+
+        initial = tunables.Tunable(1.0, robust=True)
+        tunables.publish("initialRevision", initial)
+
+        assert initial.get() == pytest.approx(4.0)
+        assert tunables.TunableRegistry.get_tune_revision(initial) == 1
+    finally:
+        unpublish = getattr(retained, "unpublish", None)
+        if unpublish is not None:
+            unpublish()
+
+
+def test_networktables_initial_snapshot_preserves_queued_tunes(nt):
+    existing = tunables.Tunable(1.0)
+    tunables.publish("existingRevision", existing)
+    nt.get_entry("/Tunables/existingRevision").set_double(2.0)
+    initial_entry = nt.get_entry("/Tunables/snapshotRevision/tune")
+    initial_entry.set_double(4.0)
+    initial = tunables.Tunable(1.0, robust=True)
+    tunables.publish("snapshotRevision", initial)
+    assert initial.get() == pytest.approx(4.0)
+    assert tunables.TunableRegistry.get_tune_revision(initial) == 1
+
+    initial_entry.set_double(5.0)
+    tunables.TunableRegistry.update()
+    assert existing.get() == pytest.approx(2.0)
+    assert tunables.TunableRegistry.get_tune_revision(existing) == 1
+    assert initial.get() == pytest.approx(5.0)
+    assert tunables.TunableRegistry.get_tune_revision(initial) == 2
+    tunables.TunableRegistry.update()
+    assert tunables.TunableRegistry.get_tune_revision(initial) == 2
+
+
 def test_selectable():
     chooser = tunables.Selectable()
     assert chooser.get_selected() is None
@@ -142,10 +266,14 @@ def test_selectable():
     assert chooser.get_selected() is True
 
 
-def test_selectable_dashboard_connects_after_publish(nt):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_selectable_dashboard_connects_after_publish(nt, legacy):
     chooser = make_selectable()
     tunables.publish("auto", chooser)
-    dashboard = DashboardSelectable(nt, "/Tunables/auto")
+    tunables.TunableRegistry.update()
+    dashboard = DashboardSelectable(
+        nt, "/SmartDashboard/auto" if legacy else "/Tunables/auto", legacy
+    )
     try:
         assert dashboard.exists()
         assert dashboard.get_default() == "one"
@@ -165,11 +293,15 @@ def test_selectable_dashboard_connects_after_publish(nt):
         dashboard.close()
 
 
-def test_selectable_dashboard_connects_before_publish(nt):
-    dashboard = DashboardSelectable(nt, "/Tunables/auto")
+@pytest.mark.parametrize("legacy", [False, True])
+def test_selectable_dashboard_connects_before_publish(nt, legacy):
+    dashboard = DashboardSelectable(
+        nt, "/SmartDashboard/auto" if legacy else "/Tunables/auto", legacy
+    )
     try:
         chooser = make_selectable()
         tunables.publish("auto", chooser)
+        tunables.TunableRegistry.update()
 
         assert dashboard.exists()
         assert dashboard.get_default() == "one"
@@ -188,8 +320,11 @@ def test_selectable_dashboard_connects_before_publish(nt):
         dashboard.close()
 
 
-def test_selectable_retains_dashboard_selection_after_republish(nt):
-    dashboard = DashboardSelectable(nt, "/Tunables/auto")
+@pytest.mark.parametrize("legacy", [False, True])
+def test_selectable_retains_dashboard_selection_after_republish(nt, legacy):
+    dashboard = DashboardSelectable(
+        nt, "/SmartDashboard/auto" if legacy else "/Tunables/auto", legacy
+    )
     try:
         first_chooser = make_selectable()
         tunables.publish("auto", first_chooser)
@@ -216,6 +351,108 @@ def test_selectable_retains_dashboard_selection_after_republish(nt):
         assert second_chooser.get_selected() == 2
     finally:
         dashboard.close()
+
+
+def test_selectable_shares_legacy_and_modern_selections(nt):
+    chooser = make_selectable()
+    calls = []
+    chooser.on_change(calls.append)
+    tunables.publish("auto", chooser)
+    legacy = DashboardSelectable(nt, "/SmartDashboard/auto", True)
+    modern = DashboardSelectable(nt, "/Tunables/auto")
+    tunables.TunableRegistry.update()
+    assert nt.get_entry("/Tunables/auto/.type").get_string("") == "Selectable"
+    assert nt.get_entry("/SmartDashboard/auto/.type").get_string("") == "String Chooser"
+    assert nt.get_entry("/SmartDashboard/auto/.instance").get_integer(-1) >= 0
+    assert nt.get_entry("/SmartDashboard/auto/.name").get_string("") == "auto"
+    assert nt.get_entry("/SmartDashboard/auto/.controllable").get_boolean(False)
+
+    legacy.set_selected("two")
+    tunables.TunableRegistry.update()
+    assert chooser.get_selected() == 2
+    assert modern.get_selected() == "two"
+    assert modern.get_active() == "two"
+    assert calls == [2]
+    assert tunables.TunableRegistry.get_tune_revision(chooser) == 1
+
+    modern.set_selected("one")
+    tunables.TunableRegistry.update()
+    assert chooser.get_selected() == 1
+    assert legacy.get_selected() == "one"
+    assert legacy.get_active() == "one"
+    legacy.set_selected("two")
+    tunables.TunableRegistry.update()
+    assert chooser.get_selected() == 2
+    tunables.TunableRegistry.update()
+    assert calls == [2, 1, 2]
+    assert tunables.TunableRegistry.get_tune_revision(chooser) == 3
+
+    chooser.remove("two")
+    tunables.TunableRegistry.update()
+    assert legacy.get_active() == "one"
+    assert legacy.get_options() == ["one"]
+    chooser.add_default("three", 3)
+    tunables.TunableRegistry.update()
+    assert legacy.get_default() == "three"
+    assert legacy.get_active() == "three"
+    chooser.clear()
+    tunables.TunableRegistry.update()
+    assert legacy.get_active() == ""
+    assert legacy.get_options() == []
+    assert calls == [2, 1, 2]
+
+    tunables.remove("auto")
+    assert not nt.get_topic("/SmartDashboard/auto/.type").exists()
+    assert not nt.get_topic("/SmartDashboard/auto/.instance").exists()
+    assert not nt.get_topic("/SmartDashboard/auto/active").exists()
+    assert not legacy.exists()
+
+
+@pytest.mark.parametrize("legacy_time_offset", [-1, 0, 1])
+def test_selectable_uses_newest_retained_dashboard_selection(nt, legacy_time_offset):
+    legacy = nt.get_string_topic("/SmartDashboard/auto/selected").publish()
+    modern = nt.get_string_topic("/Tunables/auto/selected/tune").publish()
+    legacy.set("two", 200 + legacy_time_offset)
+    modern.set("one", 200)
+    chooser = make_selectable()
+    calls = []
+    chooser.on_change(calls.append)
+    tunables.publish("auto", chooser)
+    tunables.TunableRegistry.update()
+    assert chooser.get_selected() == (2 if legacy_time_offset >= 0 else 1)
+    assert calls == [chooser.get_selected()]
+    tunables.TunableRegistry.update()
+    assert len(calls) == 1
+
+
+def test_selectable_compatibility_follows_aliases_and_backend_migration(nt):
+    chooser = make_selectable()
+    tunables.publish("nested/auto", chooser)
+    tunables.publish("alias", chooser)
+    legacy = DashboardSelectable(nt, "/SmartDashboard/nested/auto", True)
+    alias = DashboardSelectable(nt, "/SmartDashboard/alias", True)
+    legacy.set_selected("two")
+    tunables.TunableRegistry.update()
+    assert chooser.get_selected() == 2
+    assert legacy.get_active() == "two"
+    assert alias.get_active() == "two"
+    tunables.remove("alias")
+    assert not alias.exists()
+
+    tunables.TunableRegistry.register_backend(
+        "nested", wpilib.NetworkTablesTunableBackend(nt, "/OtherTunables")
+    )
+    legacy.set_selected("one")
+    tunables.TunableRegistry.update()
+    assert chooser.get_selected() == 1
+    assert legacy.get_active() == "one"
+    assert (
+        nt.get_entry("/OtherTunables/nested/auto/selected/value").get_string("")
+        == "one"
+    )
+    tunables.remove("nested/auto")
+    assert not legacy.exists()
+    assert not nt.get_topic("/SmartDashboard/nested/auto/.type").exists()
 
 
 def test_motorcontrollergroup():

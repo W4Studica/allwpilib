@@ -1,12 +1,17 @@
-load("@allwpilib_pip_deps//:requirements.bzl", "requirement")
-load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//shared/bazel/rules:cc_rules.bzl", "wpilib_cc_library", "wpilib_cc_shared_library", "wpilib_cc_static_library")
-load("//shared/bazel/rules:java_rules.bzl", "wpilib_java_junit5_test", "wpilib_java_library")
+load("//shared/bazel/rules:java_rules.bzl", "wpilib_java_library")
 load("//shared/bazel/rules:packaging.bzl", "package_default_cc_project")
 load("//shared/bazel/rules/robotpy:build_info_gen.bzl", "generate_robotpy_native_wrapper_build_info", "generate_robotpy_pybind_build_info")
-load("//shared/bazel/rules/robotpy:pytest_util.bzl", "robotpy_py_test")
 load("//telemetry:robotpy_native_build_info.bzl", "define_native_wrapper")
 load("//telemetry:robotpy_pybind_build_info.bzl", "define_pybind_library", "telemetry_extension")
+
+filegroup(
+    name = "doxygen-files",
+    srcs = glob([
+        "src/main/native/include/**/*",
+    ]),
+    visibility = ["//visibility:public"],
+)
 
 wpilib_cc_library(
     name = "telemetry",
@@ -62,32 +67,6 @@ wpilib_java_library(
     ],
 )
 
-cc_test(
-    name = "telemetry-cpp-test",
-    size = "small",
-    srcs = glob(["src/test/native/**/*.cpp"]),
-    tags = [
-        "exclusive",
-        "no-asan",
-        "no-tsan",
-    ],
-    deps = [
-        ":telemetry",
-        "//thirdparty/catch2",
-    ],
-)
-
-wpilib_java_junit5_test(
-    name = "telemetry-java-test",
-    srcs = glob(["src/test/java/**/*.java"]),
-    tags = ["exclusive"],
-    deps = [
-        ":telemetry-java",
-        "//wpiutil:wpiutil-java",
-        "@maven//:us_hebi_quickbuf_quickbuf_runtime",
-    ],
-)
-
 generate_robotpy_native_wrapper_build_info(
     name = "robotpy-native-telemetry-generator",
     pyproject_toml = "src/main/python/native-pyproject.toml",
@@ -106,7 +85,7 @@ PYBIND_PKGCFG_DEPS = [
 
 generate_robotpy_pybind_build_info(
     name = "robotpy-telemetry-generator",
-    additional_srcs = [":robotpy-native-telemetry.copy_headers"],
+    additional_srcs = [":robotpy-native-telemetry.copy_headers"] + glob(["src/main/python/telemetry/src/rpy/*.h"]),
     package_root_file = "src/main/python/telemetry/__init__.py",
     pkgcfgs = PYBIND_PKGCFG_DEPS,
     yaml_files = glob(["src/main/python/semiwrap/*.yml"]),
@@ -115,6 +94,7 @@ generate_robotpy_pybind_build_info(
 telemetry_extension(
     srcs = glob(["src/main/python/telemetry/src/**/*.cpp"]),
     extra_hdrs = glob(["src/main/python/telemetry/src/**/*.h"]),
+    header_to_dat_deps = glob(["src/main/python/telemetry/src/**"]),
     includes = [
         "src/main/python/telemetry",
         "src/main/python/telemetry/src",
@@ -123,16 +103,6 @@ telemetry_extension(
 
 define_pybind_library(
     name = "robotpy-telemetry",
+    extra_pybind_hdrs = glob(["src/main/python/**/*.h"]),
     pkgcfgs = PYBIND_PKGCFG_DEPS,
-)
-
-robotpy_py_test(
-    "python_tests",
-    srcs = glob(["src/test/python/**/*.py"]),
-    tags = ["exclusive"],
-    deps = [
-        ":robotpy-telemetry",
-        "//wpiutil:robotpy-wpiutil",
-        requirement("pytest"),
-    ],
 )

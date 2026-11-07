@@ -232,6 +232,7 @@ def define_pybind_library(name, pkgcfgs = [], extra_pybind_hdrs = []):
         name = "{}.generate_version".format(name),
         output_file = "src/main/python/romi/version.py",
         template = "//shared/bazel/rules/robotpy:version_template.in",
+        version_variable = "ROBOTPY_VERSION",
     )
 
     robotpy_library(
@@ -258,7 +259,7 @@ def define_pybind_library(name, pkgcfgs = [], extra_pybind_hdrs = []):
         project_urls = {"Source code": "https://github.com/robotpy/mostrobotpy"},
         author_email = "RobotPy Development Team <robotpy@googlegroups.com>",
         requires = ["robotpy-native-romi==0.0.0", "wpilib==0.0.0", "robotpy-halsim-ws==0.0.0"],
-        python_requires = ">=3.11",
+        python_requires = ">=3.12",
         entry_points = {
             "pkg_config": ["romi = romi"],
             "robotpy_cli.2027": ["run-romi = romi.cli:RunRomi"],

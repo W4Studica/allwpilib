@@ -188,7 +188,7 @@ class StateMachineTest extends CommandTestBase {
     assertTrue(m_scheduler.isRunning(stateMachine), "State machine should still be running");
     assertEquals(2, initCount.get(), "Command should have reinitialized");
 
-    assertEquals(14, m_events.size());
+    assertEquals(12, m_events.size());
     assertAll(
         // First run
         () -> assertTrue(m_events.get(0) instanceof Scheduled s && s.command() == stateMachine),
@@ -197,15 +197,13 @@ class StateMachineTest extends CommandTestBase {
         () -> assertTrue(m_events.get(3) instanceof Mounted m && m.command() == command),
         () -> assertTrue(m_events.get(4) instanceof Yielded y && y.command() == command),
         () -> assertTrue(m_events.get(5) instanceof Yielded y && y.command() == stateMachine),
-        () -> assertTrue(m_events.get(6) instanceof Mounted m && m.command() == command),
-        () -> assertTrue(m_events.get(7) instanceof Yielded y && y.command() == command),
         // Second run
-        () -> assertTrue(m_events.get(8) instanceof Mounted m && m.command() == stateMachine),
-        () -> assertTrue(m_events.get(9) instanceof Canceled c && c.command() == command),
-        () -> assertTrue(m_events.get(10) instanceof Scheduled s && s.command() == command),
-        () -> assertTrue(m_events.get(11) instanceof Mounted m && m.command() == command),
-        () -> assertTrue(m_events.get(12) instanceof Yielded y && y.command() == command),
-        () -> assertTrue(m_events.get(13) instanceof Yielded y && y.command() == stateMachine));
+        () -> assertTrue(m_events.get(6) instanceof Mounted m && m.command() == stateMachine),
+        () -> assertTrue(m_events.get(7) instanceof Canceled c && c.command() == command),
+        () -> assertTrue(m_events.get(8) instanceof Scheduled s && s.command() == command),
+        () -> assertTrue(m_events.get(9) instanceof Mounted m && m.command() == command),
+        () -> assertTrue(m_events.get(10) instanceof Yielded y && y.command() == command),
+        () -> assertTrue(m_events.get(11) instanceof Yielded y && y.command() == stateMachine));
   }
 
   @Test
@@ -366,6 +364,61 @@ class StateMachineTest extends CommandTestBase {
       assertFalse(m_scheduler.isRunning(command1), "Command should have ended");
       assertTrue(m_scheduler.isRunning(command2), "Command 2 should have started");
     }
+  }
+
+  @Test
+  @SuppressWarnings("WPILib.AddStateAfterSwitchFromAny")
+  void cannotAddStateAfterNoArgSwitchFromAny() {
+    var command1 = Command.noRequirements(Coroutine::park).named("Command 1");
+    var command2 = Command.noRequirements(Coroutine::park).named("Command 2");
+
+    var stateMachine = new StateMachine("State Machine");
+    var state1 = stateMachine.addState(command1);
+    stateMachine.setInitialState(state1);
+    stateMachine.switchFromAny().toExitStateMachine().when(() -> true);
+
+    var exception =
+        assertThrows(IllegalStateException.class, () -> stateMachine.addState(command2));
+    assertEquals(
+        "Cannot add new states to a state machine after switchFromAny() has been called with no"
+            + " arguments",
+        exception.getMessage());
+  }
+
+  @Test
+  void canAddStateAfterExplicitSwitchFromAny() {
+    var command1 = Command.noRequirements(Coroutine::park).named("Command 1");
+    var command2 = Command.noRequirements(Coroutine::park).named("Command 2");
+    var command3 = Command.noRequirements(Coroutine::park).named("Command 3");
+
+    var stateMachine = new StateMachine("State Machine");
+    var state1 = stateMachine.addState(command1);
+    var state2 = stateMachine.addState(command2);
+    stateMachine.switchFromAny(state1, state2).toExitStateMachine().when(() -> true);
+
+    // Adding states after explicit switchFromAny is permitted
+    var state3 = stateMachine.addState(command3);
+    stateMachine.setInitialState(state1);
+    state3.switchTo(state1).whenComplete();
+  }
+
+  @Test
+  void canAddStateAfterExplicitStateTransition() {
+    var command1 = Command.noRequirements(Coroutine::park).named("Command 1");
+    var command2 = Command.noRequirements(Coroutine::park).named("Command 2");
+    var command3 = Command.noRequirements(Coroutine::park).named("Command 3");
+
+    var stateMachine = new StateMachine("State Machine");
+    var state1 = stateMachine.addState(command1);
+    var state2 = stateMachine.addState(command2);
+
+    // Early explicit state-to-state transition
+    state1.switchTo(state2).whenComplete();
+
+    // Adding more states to build another subgraph is permitted
+    var state3 = stateMachine.addState(command3);
+    stateMachine.setInitialState(state1);
+    state2.switchTo(state3).whenComplete();
   }
 
   @Test

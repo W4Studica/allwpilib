@@ -201,6 +201,7 @@ def define_pybind_library(name, pkgcfgs = [], extra_pybind_hdrs = []):
         name = "{}.generate_version".format(name),
         output_file = "src/main/python/wpinet/version.py",
         template = "//shared/bazel/rules/robotpy:version_template.in",
+        version_variable = "ROBOTPY_VERSION",
     )
 
     robotpy_library(
@@ -226,7 +227,7 @@ def define_pybind_library(name, pkgcfgs = [], extra_pybind_hdrs = []):
         project_urls = {"Source code": "https://github.com/robotpy/mostrobotpy"},
         author_email = "RobotPy Development Team <robotpy@googlegroups.com>",
         requires = ["robotpy-native-wpinet==0.0.0", "robotpy-wpiutil==0.0.0"],
-        python_requires = ">=3.11",
+        python_requires = ">=3.12",
         entry_points = {
             "pkg_config": ["wpinet = wpinet"],
         },

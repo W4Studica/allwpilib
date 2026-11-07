@@ -237,13 +237,10 @@ class BazelExtensionModule:
                 base_library = dep_name.split("-")[0]
                 local_extension_dependencies.add(f"//{base_library}:{dep_name}")
             else:
-                base_library = fixup_root_package_name(dep_name.split("_")[0])
-                local_extension_dependencies.add(
-                    f"//{base_library}:{fixup_shared_lib_name(base_library)}"
-                )
-                dynamic_dependencies.add(
-                    f"//{base_library}:shared/{fixup_shared_lib_name(base_library)}"
-                )
+                base_library = fixup_root_package_name(dep_name.rsplit("_", 1)[0])
+                shared_lib_name = fixup_shared_lib_name(base_library.rsplit("/", 1)[-1])
+                local_extension_dependencies.add(f"//{base_library}:{shared_lib_name}")
+                dynamic_dependencies.add(f"//{base_library}:shared/{shared_lib_name}")
                 if dep_name != self.name:
                     local_extension_dependencies.add(
                         f"//{base_library}:{dep_name}_pybind_library"
@@ -319,6 +316,7 @@ def generate_pybind_build_file(
     stripped_include_prefix: str,
     yml_prefix: str | None,
     output_file: pathlib.Path,
+    package_name: str | None = None,
 ):
     project_dir = project_file.parent
     plan = makeplan(project_dir)
@@ -443,10 +441,19 @@ def generate_pybind_build_file(
             for ep_key, ep_value in explicit_entry_points[entry_point_type].items():
                 entry_points[entry_point_type].append(f"{ep_key} = {ep_value}")
 
+    # The package the generated file is loaded from is usually the project root, but a
+    # project can generate a build file for a module in a subpackage (e.g. test modules).
+    bazel_package = package_name or fixup_root_package_name(top_level_name)
     strip_path_prefixes = [
-        f"{fixup_root_package_name(top_level_name)}/{stripped_include_prefix}",
+        f"{bazel_package}/{stripped_include_prefix}",
         f"{fixup_root_package_name(top_level_name)}",
     ]
+
+    has_semiwrap_files = False
+    for em in extension_modules:
+        if em.generation_data:
+            has_semiwrap_files = True
+            break
 
     with open(output_file, "w", newline="\n") as f:
         f.write(
@@ -464,6 +471,7 @@ def generate_pybind_build_file(
                 entry_points=entry_points,
                 version_file=version_file,
                 has_external_python_deps=has_external_python_deps,
+                has_semiwrap_files=has_semiwrap_files,
             )
             + "\n"
         )
@@ -478,6 +486,7 @@ def main():
     )
     parser.add_argument("--yml_prefix", type=str)
     parser.add_argument("--package_root_file", type=str)
+    parser.add_argument("--package_name", type=str)
     parser.add_argument("--pkgcfgs", type=pathlib.Path, nargs="+")
 
     args = parser.parse_args()
@@ -489,6 +498,7 @@ def main():
         args.stripped_include_prefix,
         args.yml_prefix,
         args.output_file,
+        args.package_name,
     )
 
 

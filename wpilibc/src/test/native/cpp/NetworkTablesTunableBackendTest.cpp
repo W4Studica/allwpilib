@@ -10,9 +10,11 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "wpi/math/geometry/Translation2d.hpp"
 #include "wpi/nt/DoubleTopic.hpp"
@@ -20,6 +22,7 @@
 #include "wpi/nt/NetworkTableInstance.hpp"
 #include "wpi/nt/ProtobufTopic.hpp"
 #include "wpi/nt/StringArrayTopic.hpp"
+#include "wpi/nt/StringTopic.hpp"
 #include "wpi/nt/StructArrayTopic.hpp"
 #include "wpi/nt/StructTopic.hpp"
 #include "wpi/tunables/ComplexTunable.hpp"
@@ -127,18 +130,37 @@ class StructMemberComplexTunable final : public wpi::tunables::ComplexTunable {
   wpi::tunables::TunableConfig m_config;
 };
 
+class RobustChildComplexTunable final : public wpi::tunables::ComplexTunable {
+ public:
+  explicit RobustChildComplexTunable(const wpi::tunables::TunableConfig& config)
+      : child{1.0, config} {}
+
+  void PublishTunable(wpi::tunables::TunableTable& table) override {
+    table.Publish("child", child);
+  }
+
+  wpi::tunables::TunableDouble child;
+};
+
 class DashboardSelectable {
  public:
-  DashboardSelectable(wpi::nt::NetworkTableInstance inst, std::string_view path)
+  DashboardSelectable(wpi::nt::NetworkTableInstance inst, std::string_view path,
+                      bool legacy = false)
       : m_default{inst.GetTopic(std::format("{}/default", path))
                       .GenericSubscribe("string")},
-        m_selected{inst.GetTopic(std::format("{}/selected/tune", path))
-                       .GenericSubscribe("string")},
-        m_selectedPub{inst.GetTopic(std::format("{}/selected/tune", path))
-                          .GenericPublishEx("string", wpi::util::json::object(
-                                                          "retained", true))},
-        m_active{inst.GetTopic(std::format("{}/selected/value", path))
-                     .GenericSubscribe("string")},
+        m_selected{
+            inst.GetTopic(std::format("{}{}", path,
+                                      legacy ? "/selected" : "/selected/tune"))
+                .GenericSubscribe("string")},
+        m_selectedPub{
+            inst.GetTopic(std::format("{}{}", path,
+                                      legacy ? "/selected" : "/selected/tune"))
+                .GenericPublishEx("string",
+                                  wpi::util::json::object("retained", true))},
+        m_active{
+            inst.GetTopic(std::format("{}{}", path,
+                                      legacy ? "/active" : "/selected/value"))
+                .GenericSubscribe("string")},
         m_options{inst.GetTopic(std::format("{}/options", path))
                       .GenericSubscribe("string[]")} {}
 
@@ -412,6 +434,149 @@ TEST_CASE_METHOD(
 }
 
 TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "TuneRevisionTracksRemoteUpdatesWithoutConfigOrCallback",
+                 "[wpilibc][tunable]") {
+  wpi::tunables::TunableDouble value{1.0};
+  wpi::tunables::Publish("revision", value);
+
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 0);
+
+  auto pub = inst.GetDoubleTopic("/Tunables/revision").Publish();
+  pub.Set(2.0);
+  inst.Flush();
+  wpi::tunables::TunableRegistry::Update();
+
+  CHECK(value.Get() == 2.0);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 1);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 1);
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "TuneRevisionCountsRobustInitialRemoteApplication",
+                 "[wpilibc][tunable]") {
+  auto remote = inst.GetTopic("/Tunables/initialRevision/tune")
+                    .GenericPublishEx(
+                        "double", wpi::util::json::object("retained", true));
+  remote.SetDouble(4.0);
+  inst.Flush();
+
+  auto config = RobustConfig();
+  wpi::tunables::TunableDouble value{1.0, config};
+  wpi::tunables::Publish("initialRevision", value);
+
+  CHECK(value.Get() == 4.0);
+  CHECK(4.0 == Value("initialRevision").GetDouble(0.0));
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 1);
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "TuneRevisionCountsRobustInitialChildApplication",
+                 "[wpilibc][tunable]") {
+  auto remote = inst.GetTopic("/Tunables/complexInitialRevision/child/tune")
+                    .GenericPublishEx(
+                        "double", wpi::util::json::object("retained", true));
+  remote.SetDouble(4.0);
+  inst.Flush();
+
+  auto config = RobustConfig();
+  RobustChildComplexTunable complex{config};
+  wpi::tunables::Publish("complexInitialRevision", complex);
+
+  CHECK(complex.child.Get() == 4.0);
+  CHECK(4.0 == Value("complexInitialRevision/child").GetDouble(0.0));
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(complex.child) == 1);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(complex) == 1);
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "InitialDirectMemberUpdatesOwnerAndEnclosingComplex",
+                 "[wpilibc][tunable]") {
+  class MemberComplex : public wpi::tunables::ComplexTunable {
+   public:
+    void PublishTunable(wpi::tunables::TunableTable&) override {}
+    double value = 1.0;
+  } owner;
+  CountingComplexTunable enclosing;
+  wpi::tunables::Publish("enclosing", enclosing);
+  auto pub = Tune("enclosing/member", "double");
+  pub.SetDouble(4.0);
+
+  REQUIRE(wpi::tunables::Publish("enclosing/member", &owner,
+                                 &MemberComplex::value, RobustConfig()));
+  CHECK(owner.value == 4.0);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(owner) == 1);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(enclosing) == 1);
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(enclosing) == 1);
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "InitialSnapshotPreservesOtherQueuedTunes",
+                 "[wpilibc][tunable]") {
+  wpi::tunables::TunableDouble existing{1.0};
+  wpi::tunables::Publish("existingRevision", existing);
+  auto existingPub =
+      inst.GetDoubleTopic("/Tunables/existingRevision").Publish();
+  auto initialPub = Tune("snapshotRevision", "double");
+  existingPub.Set(2.0);
+  initialPub.SetDouble(4.0);
+  wpi::tunables::TunableDouble initial{1.0, RobustConfig()};
+  wpi::tunables::Publish("snapshotRevision", initial);
+  CHECK(initial.Get() == 4.0);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(initial) == 1);
+
+  initialPub.SetDouble(5.0);
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(existing.Get() == 2.0);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(existing) == 1);
+  CHECK(initial.Get() == 5.0);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(initial) == 2);
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(initial) == 2);
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "InitialSnapshotIgnoresMismatchedType",
+                 "[wpilibc][tunable]") {
+  auto publisher = Tune("wrongInitialType", "otherRawType");
+  publisher.SetRaw(std::vector<uint8_t>{2, 3});
+  wpi::tunables::TunableRaw value{std::vector<uint8_t>{1}, RobustConfig()};
+  REQUIRE(wpi::tunables::Publish("wrongInitialType", value));
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(value.Get() == std::vector<uint8_t>{1});
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 0);
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "TuneRevisionIgnoresLocalNetworkPublishes",
+                 "[wpilibc][tunable]") {
+  auto config = RobustConfig();
+  wpi::tunables::TunableDouble value{1.0, config};
+  wpi::tunables::Publish("localRevision", value);
+
+  value.Set(2.0);
+  wpi::tunables::TunableRegistry::Update();
+
+  CHECK(2.0 == Value("localRevision").GetDouble(0.0));
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 0);
+
+  auto pub = Tune("localRevision", "double");
+  pub.SetDouble(3.0);
+  inst.Flush();
+  wpi::tunables::TunableRegistry::Update();
+
+  CHECK(value.Get() == 3.0);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 1);
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
                  "NetworkTablesTunableBackendTest PublishesRobustDouble",
                  "[wpilibc][tunable]") {
   wpi::tunables::TunableConfig config;
@@ -462,11 +627,14 @@ TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
                  "NetworkTablesTunableBackendTest "
                  "SelectableDashboardConnectsAfterPublish",
                  "[wpilibc][tunable]") {
+  bool legacy = GENERATE(false, true);
   wpi::tunables::Selectable<int> chooser;
   ConfigureSelectable(chooser);
   wpi::tunables::Publish("auto", chooser);
+  wpi::tunables::TunableRegistry::Update();
 
-  DashboardSelectable dashboard{inst, "/Tunables/auto"};
+  DashboardSelectable dashboard{
+      inst, legacy ? "/SmartDashboard/auto" : "/Tunables/auto", legacy};
 
   CHECK(dashboard.Exists());
   CHECK("one" == dashboard.GetDefault());
@@ -488,11 +656,14 @@ TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
                  "NetworkTablesTunableBackendTest "
                  "SelectableDashboardConnectsBeforePublish",
                  "[wpilibc][tunable]") {
-  DashboardSelectable dashboard{inst, "/Tunables/auto"};
+  bool legacy = GENERATE(false, true);
+  DashboardSelectable dashboard{
+      inst, legacy ? "/SmartDashboard/auto" : "/Tunables/auto", legacy};
   wpi::tunables::Selectable<int> chooser;
   ConfigureSelectable(chooser);
 
   wpi::tunables::Publish("auto", chooser);
+  wpi::tunables::TunableRegistry::Update();
 
   CHECK(dashboard.Exists());
   CHECK("one" == dashboard.GetDefault());
@@ -513,11 +684,14 @@ TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
                  "NetworkTablesTunableBackendTest "
                  "SelectableRetainsDashboardSelectionAfterRepublish",
                  "[wpilibc][tunable]") {
-  DashboardSelectable dashboard{inst, "/Tunables/auto"};
+  bool legacy = GENERATE(false, true);
+  DashboardSelectable dashboard{
+      inst, legacy ? "/SmartDashboard/auto" : "/Tunables/auto", legacy};
   {
     wpi::tunables::Selectable<int> chooser;
     ConfigureSelectable(chooser);
     wpi::tunables::Publish("auto", chooser);
+    wpi::tunables::TunableRegistry::Update();
 
     dashboard.SetSelected("two");
     inst.Flush();
@@ -534,10 +708,136 @@ TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
   ConfigureSelectable(chooser);
   wpi::tunables::Publish("auto", chooser);
   wpi::tunables::TunableRegistry::Update();
+  wpi::tunables::TunableRegistry::Update();
 
   CHECK("two" == dashboard.GetSelected());
   CHECK("two" == dashboard.GetActive());
   CHECK(2 == chooser.GetSelected());
+}
+
+TEST_CASE_METHOD(
+    NetworkTablesTunableBackendTest,
+    "NetworkTablesTunableBackendTest SelectableSharesLegacyAndModernSelections",
+    "[wpilibc][tunable]") {
+  wpi::tunables::Selectable<int> chooser;
+  ConfigureSelectable(chooser);
+  int calls = 0;
+  chooser.OnChange([&](int) { ++calls; });
+  wpi::tunables::Publish("auto", chooser);
+  DashboardSelectable legacy{inst, "/SmartDashboard/auto", true};
+  DashboardSelectable modern{inst, "/Tunables/auto"};
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(
+      inst.GetTopic("/Tunables/auto/.type").GenericSubscribe().GetString("") ==
+      "Selectable");
+  CHECK(inst.GetTopic("/SmartDashboard/auto/.type")
+            .GenericSubscribe()
+            .GetString("") == "String Chooser");
+  CHECK(inst.GetTopic("/SmartDashboard/auto/.instance")
+            .GenericSubscribe()
+            .GetInteger(-1) >= 0);
+
+  CHECK(inst.GetTopic("/SmartDashboard/auto/.name")
+            .GenericSubscribe()
+            .GetString("") == "auto");
+  CHECK(inst.GetTopic("/SmartDashboard/auto/.controllable")
+            .GenericSubscribe()
+            .GetBoolean(false));
+
+  legacy.SetSelected("two");
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(chooser.GetSelected() == 2);
+  CHECK(modern.GetSelected() == "two");
+  CHECK(modern.GetActive() == "two");
+  CHECK(calls == 1);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(chooser) == 1);
+
+  modern.SetSelected("one");
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(chooser.GetSelected() == 1);
+  CHECK(legacy.GetSelected() == "one");
+  CHECK(legacy.GetActive() == "one");
+  legacy.SetSelected("two");
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(chooser.GetSelected() == 2);
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(calls == 3);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(chooser) == 3);
+
+  chooser.Remove("two");
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(legacy.GetActive() == "one");
+  CHECK(legacy.GetOptions() == std::vector<std::string>{"one"});
+  chooser.AddDefault("three", 3);
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(legacy.GetDefault() == "three");
+  CHECK(legacy.GetActive() == "three");
+  chooser.Clear();
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(legacy.GetActive().empty());
+  CHECK(legacy.GetOptions().empty());
+  CHECK(calls == 3);
+
+  wpi::tunables::Remove("auto");
+  CHECK_FALSE(inst.GetTopic("/SmartDashboard/auto/.type").Exists());
+  CHECK_FALSE(inst.GetTopic("/SmartDashboard/auto/.instance").Exists());
+  CHECK_FALSE(inst.GetTopic("/SmartDashboard/auto/active").Exists());
+  CHECK_FALSE(legacy.Exists());
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "SelectableUsesNewestRetainedDashboardSelection",
+                 "[wpilibc][tunable]") {
+  int legacyTimeOffset = GENERATE(-1, 0, 1);
+  auto legacy = inst.GetStringTopic("/SmartDashboard/auto/selected").Publish();
+  auto modern = inst.GetStringTopic("/Tunables/auto/selected/tune").Publish();
+  legacy.Set("two", 200 + legacyTimeOffset);
+  modern.Set("one", 200);
+  wpi::tunables::Selectable<int> chooser;
+  ConfigureSelectable(chooser);
+  int calls = 0;
+  chooser.OnChange([&](int) { ++calls; });
+  wpi::tunables::Publish("auto", chooser);
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(chooser.GetSelected() == (legacyTimeOffset >= 0 ? 2 : 1));
+  CHECK(calls == 1);
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(calls == 1);
+}
+
+TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
+                 "NetworkTablesTunableBackendTest "
+                 "SelectableCompatibilityFollowsMovesAndBackendMigration",
+                 "[wpilibc][tunable]") {
+  wpi::tunables::Selectable<int> chooser;
+  ConfigureSelectable(chooser);
+  wpi::tunables::Publish("nested/auto", chooser);
+  wpi::tunables::Publish("alias", chooser);
+  DashboardSelectable legacy{inst, "/SmartDashboard/nested/auto", true};
+  DashboardSelectable alias{inst, "/SmartDashboard/alias", true};
+  legacy.SetSelected("two");
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(chooser.GetSelected() == 2);
+  CHECK(legacy.GetActive() == "two");
+  CHECK(alias.GetActive() == "two");
+  wpi::tunables::Remove("alias");
+  CHECK_FALSE(alias.Exists());
+
+  wpi::tunables::TunableRegistry::RegisterBackend(
+      "nested", std::make_shared<wpi::backend::NetworkTablesTunableBackend>(
+                    inst, "/OtherTunables"));
+  auto moved = std::move(chooser);
+  legacy.SetSelected("one");
+  wpi::tunables::TunableRegistry::Update();
+  CHECK(moved.GetSelected() == 1);
+  CHECK(legacy.GetActive() == "one");
+  CHECK(inst.GetTopic("/OtherTunables/nested/auto/selected/value")
+            .GenericSubscribe()
+            .GetString("") == "one");
+  wpi::tunables::Remove("nested/auto");
+  CHECK_FALSE(legacy.Exists());
+  CHECK_FALSE(inst.GetTopic("/SmartDashboard/nested/auto/.type").Exists());
 }
 
 TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
@@ -612,6 +912,7 @@ TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
 
   CHECK(initial.X() == value.Get().X());
   CHECK(initial.Y() == value.Get().Y());
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 0);
   CHECK(0 == calls);
   CHECK(sub.ReadQueue().empty());
 }
@@ -662,6 +963,7 @@ TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
   CHECK(initial[0].Y() == value.Get()[0].Y());
   CHECK(initial[1].X() == value.Get()[1].X());
   CHECK(initial[1].Y() == value.Get()[1].Y());
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 0);
   CHECK(0 == calls);
   CHECK(sub.ReadQueue().empty());
 }
@@ -767,6 +1069,7 @@ TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
 
   CHECK(initial.X() == value.Get().X());
   CHECK(initial.Y() == value.Get().Y());
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 0);
   CHECK(0 == calls);
   CHECK(sub.ReadQueue().empty());
   CHECK(HasWarning(warnings, "/Tunables/malformedTranslation",
@@ -801,11 +1104,18 @@ TEST_CASE_METHOD(
     "NetworkTablesTunableBackendTest OnTuneRunsForMutableRemoteUpdates",
     "[wpilibc][tunable]") {
   int calls = 0;
+  uint64_t callbackRevision = 0;
+  wpi::tunables::TunableDouble* valuePtr = nullptr;
   wpi::tunables::TunableConfig config;
   config.robust = true;
-  config.onTune = [&](wpi::tunables::detail::TunableBase&,
-                      wpi::tunables::ComplexTunable*) { ++calls; };
+  config.onTune = [&](wpi::tunables::detail::TunableBase& tunable,
+                      wpi::tunables::ComplexTunable*) {
+    callbackRevision = wpi::tunables::TunableRegistry::GetTuneRevision(tunable);
+    ++calls;
+    valuePtr->Set(4.0);
+  };
   wpi::tunables::TunableDouble value{1.0, config};
+  valuePtr = &value;
   wpi::tunables::Publish("mutable", value);
 
   auto pub = Tune("mutable", "double");
@@ -813,8 +1123,15 @@ TEST_CASE_METHOD(
   inst.Flush();
   wpi::tunables::TunableRegistry::Update();
 
-  CHECK(2.0 == value.Get());
+  CHECK(4.0 == value.Get());
   CHECK(1 == calls);
+  CHECK(callbackRevision == 1);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 1);
+
+  wpi::tunables::TunableRegistry::Update();
+
+  CHECK(1 == calls);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 1);
 }
 
 TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
@@ -844,6 +1161,7 @@ TEST_CASE_METHOD(NetworkTablesTunableBackendTest,
 
   CHECK(5.0 == value.Get());
   CHECK(5.0 == sub.Get());
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 1);
 }
 
 TEST_CASE_METHOD(
@@ -884,6 +1202,7 @@ TEST_CASE_METHOD(
 
   CHECK(1 == throwing.Get().value);
   CHECK(0 == standaloneCalls);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(throwing) == 0);
   CHECK(HasWarning(warnings, "/Tunables/throwing",
                    "rejected struct tune payload"));
 
@@ -904,6 +1223,7 @@ TEST_CASE_METHOD(
 
   CHECK(4 == throwing.Get().value);
   CHECK(5 == complex.value.value);
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(throwing) == 1);
   CHECK(1 == standaloneCalls);
   CHECK(1 == memberCalls);
   ThrowingPackStructState::throwDuringUnpack = false;
@@ -1228,5 +1548,6 @@ TEST_CASE_METHOD(
   wpi::tunables::TunableRegistry::Update();
 
   CHECK(1.0 == value.Get());
+  CHECK(wpi::tunables::TunableRegistry::GetTuneRevision(value) == 0);
   CHECK(0 == calls);
 }

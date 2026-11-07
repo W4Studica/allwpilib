@@ -170,26 +170,6 @@ def drivers_extension(srcs = [], header_to_dat_deps = [], extra_hdrs = [], inclu
                 ("wpi::SparkMini", "wpi__SparkMini.hpp"),
             ],
         ),
-        struct(
-            class_name = "Talon",
-            yml_file = "semiwrap/Talon.yml",
-            header_root = "$(execpath :robotpy-native-wpilib-drivers.copy_headers)",
-            header_file = "$(execpath :robotpy-native-wpilib-drivers.copy_headers)/wpi/drivers/motor/Talon.hpp",
-            tmpl_class_names = [],
-            trampolines = [
-                ("wpi::Talon", "wpi__Talon.hpp"),
-            ],
-        ),
-        struct(
-            class_name = "VictorSP",
-            yml_file = "semiwrap/VictorSP.yml",
-            header_root = "$(execpath :robotpy-native-wpilib-drivers.copy_headers)",
-            header_file = "$(execpath :robotpy-native-wpilib-drivers.copy_headers)/wpi/drivers/motor/VictorSP.hpp",
-            tmpl_class_names = [],
-            trampolines = [
-                ("wpi::VictorSP", "wpi__VictorSP.hpp"),
-            ],
-        ),
     ]
 
     resolve_casters(
@@ -309,6 +289,7 @@ def define_pybind_library(name, pkgcfgs = [], extra_pybind_hdrs = []):
         name = "{}.generate_version".format(name),
         output_file = "src/main/python/wpilib_drivers/version.py",
         template = "//shared/bazel/rules/robotpy:version_template.in",
+        version_variable = "ROBOTPY_VERSION",
     )
 
     robotpy_library(
@@ -334,7 +315,7 @@ def define_pybind_library(name, pkgcfgs = [], extra_pybind_hdrs = []):
         project_urls = {"Source code": "https://github.com/robotpy/mostrobotpy"},
         author_email = "RobotPy Development Team <robotpy@googlegroups.com>",
         requires = ["robotpy-native-wpilib-drivers==0.0.0", "wpilib==0.0.0"],
-        python_requires = ">=3.11",
+        python_requires = ">=3.12",
         entry_points = {
             "pkg_config": ["drivers = wpilib_drivers"],
         },
